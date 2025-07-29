@@ -36,6 +36,9 @@ next-env.d.ts
 
 # Database
 database.sqlite*
+/db/*.sqlite*
+/db/*.sqlite-wal
+/db/*.sqlite-shm
 
 # Uploads directory
 /uploads/*

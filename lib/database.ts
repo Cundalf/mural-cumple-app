@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 
 // Interfaces TypeScript
 export interface Message {
@@ -26,7 +27,13 @@ class DatabaseConnection {
 
   private getDb(): Database.Database {
     if (!this.db) {
-      const dbPath = join(process.cwd(), 'database.sqlite');
+      // Crear carpeta db si no existe
+      const dbDir = join(process.cwd(), 'db');
+      if (!existsSync(dbDir)) {
+        mkdirSync(dbDir, { recursive: true });
+      }
+      
+      const dbPath = join(dbDir, 'database.sqlite');
       this.db = new Database(dbPath);
       this.db.pragma('journal_mode = WAL');
       this.initializeTables();
@@ -37,7 +44,7 @@ class DatabaseConnection {
   private initializeTables(): void {
     if (this.initialized) return;
 
-    const db = this.db!;
+    const db = this.getDb();
     
     // Crear tablas
     db.exec(`
