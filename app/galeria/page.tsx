@@ -2,70 +2,78 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2 } from "lucide-react"
-import { Dialog, DialogContent, DialogTrigger, DialogClose } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "@/components/ui/dialog"
+import { useRealtime } from "@/hooks/use-realtime"
 
 interface MediaItem {
   id: string
   type: "image" | "video"
   url: string
-  name: string
-  timestamp: Date
+  original_name: string
+  timestamp: string
 }
 
 export default function GaleriaPage() {
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
 
-  // Cargar items del localStorage al iniciar
-  useEffect(() => {
-    const savedItems = localStorage.getItem("baby-shower-media")
-    if (savedItems) {
-      const parsed = JSON.parse(savedItems)
-      setMediaItems(
-        parsed.map((item: any) => ({
-          ...item,
-          timestamp: new Date(item.timestamp),
-        })),
-      )
-    }
-  }, [])
-
-  // Guardar en localStorage cuando cambie mediaItems
-  useEffect(() => {
-    if (mediaItems.length > 0) {
-      localStorage.setItem("baby-shower-media", JSON.stringify(mediaItems))
-    }
-  }, [mediaItems])
-
-  // Simular actualizaciones en tiempo real
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const savedItems = localStorage.getItem("baby-shower-media")
-      if (savedItems) {
-        const parsed = JSON.parse(savedItems)
-        const updatedItems = parsed.map((item: any) => ({
-          ...item,
-          timestamp: new Date(item.timestamp),
-        }))
-
-        if (JSON.stringify(updatedItems) !== JSON.stringify(mediaItems)) {
-          setMediaItems(updatedItems)
-        }
+  // Handlers estables para eventos en tiempo real
+  const handleMediaUploaded = useCallback((media: MediaItem) => {
+    setMediaItems(prev => {
+      // Verificar si ya existe antes de agregar
+      const exists = prev.some(item => item.id === media.id);
+      if (exists) {
+        return prev; // No agregar si ya existe
       }
-    }, 2000) // Verificar cada 2 segundos
+      return [media, ...prev];
+    });
+  }, []);
 
-    return () => clearInterval(interval)
-  }, [mediaItems])
+  const handleMediaDeleted = useCallback((data: { id: string }) => {
+    setMediaItems(prev => prev.filter(item => item.id !== data.id));
+    setSelectedMedia(prev => prev?.id === data.id ? null : prev);
+  }, []);
+
+  const handleConnected = useCallback(() => {
+    // Conexión establecida
+  }, []);
+
+  // Configurar tiempo real con handlers estables
+  const { disconnect, reconnect, isConnected } = useRealtime({
+    onMediaUploaded: handleMediaUploaded,
+    onMediaDeleted: handleMediaDeleted,
+    onConnected: handleConnected
+  });
+
+  // Cargar archivos multimedia al iniciar
+  useEffect(() => {
+    const loadMedia = async () => {
+      try {
+        const response = await fetch('/api/media')
+        if (response.ok) {
+          const media = await response.json()
+          setMediaItems(media)
+        }
+      } catch (error) {
+        console.error('Error al cargar archivos multimedia:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadMedia()
+  }, [])
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
@@ -73,37 +81,76 @@ export default function GaleriaPage() {
 
     setIsUploading(true)
 
-    // Procesar cada archivo
-    const newItems: MediaItem[] = []
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-
-      // Crear URL del objeto
-      const url = URL.createObjectURL(file)
-      const type = file.type.startsWith("image/") ? "image" : "video"
-
-      const newItem: MediaItem = {
-        id: Date.now().toString() + i.toString() + Math.random().toString(36).substr(2, 9),
-        type,
-        url,
-        name: file.name,
-        timestamp: new Date(),
+    try {
+      const formData = new FormData()
+      
+      // Agregar todos los archivos al FormData
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i])
       }
 
-      newItems.push(newItem)
+      const response = await fetch('/api/media/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al subir archivos')
+      }
+
+      // Los archivos se agregarán automáticamente via eventos en tiempo real
+    } catch (error) {
+      console.error('Error al subir archivos:', error)
+    } finally {
+      setIsUploading(false)
+      event.target.value = ""
     }
-
-    // Agregar todos los items de una vez
-    setMediaItems((prev) => [...newItems, ...prev])
-
-    setIsUploading(false)
-    event.target.value = ""
   }
 
-  const deleteMedia = (id: string) => {
-    setMediaItems((prev) => prev.filter((item) => item.id !== id))
-    setSelectedMedia(null)
+  const deleteMedia = async (id: string) => {
+    if (!id) return;
+    
+    try {
+      const response = await fetch(`/api/media?id=${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
+      }
+
+      // El archivo se eliminará automáticamente via eventos en tiempo real
+      // Pero si por alguna razón el evento no llega, hacemos fallback local después de 2 segundos
+      setTimeout(() => {
+        setMediaItems(prev => {
+          const stillExists = prev.some(item => item.id === id);
+          if (stillExists) {
+            // Si aún existe después de 2 segundos, lo eliminamos localmente
+            return prev.filter(item => item.id !== id);
+          }
+          return prev;
+        });
+        
+        // También cerrar modal si está abierto
+        setSelectedMedia(prev => prev?.id === id ? null : prev);
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error al eliminar archivo:', error);
+      // Mostrar error al usuario (opcional)
+      alert('Error al eliminar el archivo. Por favor intenta de nuevo.');
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-pink-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-lg text-gray-600">Cargando galería...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -124,7 +171,19 @@ export default function GaleriaPage() {
           <div className="flex-1 flex justify-center">
             <h1 className="text-3xl md:text-4xl font-bold text-gray-800">Galería de Recuerdos</h1>
           </div>
-          <div className="w-[120px]"></div>
+          <div className="w-[120px] flex justify-end">
+            {/* Indicador de conexión mejorado */}
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
+              isConnected() 
+                ? 'bg-green-100 text-green-800 border border-green-200' 
+                : 'bg-red-100 text-red-800 border border-red-200'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${
+                isConnected() ? 'bg-green-500' : 'bg-red-500'
+              }`} />
+              {isConnected() ? 'En línea' : 'Desconectado'}
+            </div>
+          </div>
         </div>
 
         {/* Upload Section */}
@@ -205,7 +264,7 @@ export default function GaleriaPage() {
                         </div>
                       )}
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                        <p className="text-white/80 text-xs">{item.timestamp.toLocaleString()}</p>
+                        <p className="text-white/80 text-xs">{new Date(item.timestamp).toLocaleString()}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -214,6 +273,9 @@ export default function GaleriaPage() {
                   className="max-w-5xl max-h-[95vh] p-0 bg-black/95 border-0"
                   aria-describedby="media-description"
                 >
+                  <DialogTitle className="sr-only">
+                    Ver {item.type === "image" ? "imagen" : "video"} en tamaño completo
+                  </DialogTitle>
                   <DialogClose asChild>
                     <Button
                       variant="ghost"
@@ -241,7 +303,7 @@ export default function GaleriaPage() {
                     )}
                   </div>
                   <div className="absolute bottom-4 left-4 text-white/80 bg-black/50 px-4 py-2 rounded-lg">
-                    <p className="text-sm">Subido el {item.timestamp.toLocaleString()}</p>
+                    <p className="text-sm">Subido el {new Date(item.timestamp).toLocaleString()}</p>
                   </div>
                   <div id="media-description" className="sr-only">
                     Modal para ver {item.type === "image" ? "imagen" : "video"} en tamaño completo

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -11,12 +11,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ArrowLeft, Heart, Send, Trash2, Download } from "lucide-react"
+import { useRealtime } from "@/hooks/use-realtime"
 
 interface Message {
   id: string
   text: string
   author: string
-  timestamp: Date
+  timestamp: string
   color: string
 }
 
@@ -44,69 +45,97 @@ export default function MuralPage() {
   const [newMessage, setNewMessage] = useState("")
   const [authorName, setAuthorName] = useState("")
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
 
-  // Cargar mensajes del localStorage al iniciar
+  // Handlers estables para eventos en tiempo real
+  const handleMessageCreated = useCallback((message: Message) => {
+    setMessages(prev => [message, ...prev]);
+  }, []);
+
+  const handleMessageDeleted = useCallback((data: { id: string }) => {
+    setMessages(prev => prev.filter(msg => msg.id !== data.id));
+  }, []);
+
+  const handleConnected = useCallback(() => {
+    // Conexión establecida
+  }, []);
+
+  // Configurar tiempo real con handlers estables
+  const { disconnect, reconnect, isConnected } = useRealtime({
+    onMessageCreated: handleMessageCreated,
+    onMessageDeleted: handleMessageDeleted,
+    onConnected: handleConnected
+  });
+
+  // Cargar mensajes al iniciar
   useEffect(() => {
-    const savedMessages = localStorage.getItem("baby-shower-messages")
-    if (savedMessages) {
-      const parsed = JSON.parse(savedMessages)
-      setMessages(
-        parsed.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp),
-        })),
-      )
+    const loadMessages = async () => {
+      try {
+        const response = await fetch('/api/messages')
+        if (response.ok) {
+          const messagesData = await response.json()
+          setMessages(messagesData)
+        }
+      } catch (error) {
+        console.error('Error al cargar mensajes:', error)
+      } finally {
+        setIsLoading(false)
+      }
     }
+
+    loadMessages()
   }, [])
 
-  // Guardar en localStorage cuando cambien los mensajes
-  useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem("baby-shower-messages", JSON.stringify(messages))
-    }
-  }, [messages])
-
-  // Simular actualizaciones en tiempo real
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const savedMessages = localStorage.getItem("baby-shower-messages")
-      if (savedMessages) {
-        const parsed = JSON.parse(savedMessages)
-        const updatedMessages = parsed.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp),
-        }))
-
-        if (JSON.stringify(updatedMessages) !== JSON.stringify(messages)) {
-          setMessages(updatedMessages)
-        }
-      }
-    }, 2000) // Verificar cada 2 segundos
-
-    return () => clearInterval(interval)
-  }, [messages])
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!newMessage.trim() || !authorName.trim()) return
+    if (!newMessage.trim() || !authorName.trim() || isSubmitting) return
 
-    const message: Message = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      text: newMessage.trim(),
-      author: authorName.trim(),
-      timestamp: new Date(),
-      color: colors[Math.floor(Math.random() * colors.length)],
+    setIsSubmitting(true)
+
+    try {
+      const color = colors[Math.floor(Math.random() * colors.length)]
+
+      const response = await fetch('/api/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: newMessage.trim(),
+          author: authorName.trim(),
+          color,
+        }),
+      })
+
+      if (response.ok) {
+        // El mensaje se agregará automáticamente via eventos en tiempo real
+        setNewMessage("")
+      } else {
+        throw new Error('Error al enviar mensaje')
+      }
+    } catch (error) {
+      console.error('Error al enviar mensaje:', error)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    setMessages((prev) => [message, ...prev])
-    setNewMessage("")
   }
 
-  const deleteMessage = (id: string) => {
-    setMessages((prev) => prev.filter((msg) => msg.id !== id))
+  const deleteMessage = async (id: string) => {
+    try {
+      const response = await fetch(`/api/messages?id=${id}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        // El mensaje se eliminará automáticamente via eventos en tiempo real
+      }
+    } catch (error) {
+      console.error('Error al eliminar mensaje:', error)
+    }
   }
 
   const generatePDF = async () => {
@@ -322,7 +351,7 @@ export default function MuralPage() {
                     <div style="position: relative;">
                       <p class="message-text">"${message.text}"</p>
                       <p class="message-author">- ${message.author}</p>
-                      <p class="message-date">${message.timestamp.toLocaleString()}</p>
+                      <p class="message-date">${new Date(message.timestamp).toLocaleString()}</p>
                     </div>
                     <div class="heart">💕</div>
                   </div>
@@ -351,6 +380,17 @@ export default function MuralPage() {
     }
   }
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-pink-50 to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-600 mx-auto mb-4"></div>
+          <p className="text-lg text-gray-600">Cargando mural...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-pink-50 to-blue-50">
       <div className="container mx-auto px-4 py-6">
@@ -369,16 +409,27 @@ export default function MuralPage() {
           <div className="flex-1 flex justify-center">
             <h1 className="text-3xl md:text-4xl font-bold text-gray-800">Mural de Mensajes</h1>
           </div>
-          <div className="w-[120px] flex justify-end">
+          <div className="w-[160px] flex justify-end gap-2 items-center">
+            {/* Indicador de conexión mejorado */}
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
+              isConnected() 
+                ? 'bg-green-100 text-green-800 border border-green-200' 
+                : 'bg-red-100 text-red-800 border border-red-200'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${
+                isConnected() ? 'bg-green-500' : 'bg-red-500'
+              }`} />
+              {isConnected() ? 'En línea' : 'Desconectado'}
+            </div>
             {messages.length > 0 && (
               <Button
                 onClick={generatePDF}
                 disabled={isGeneratingPDF}
                 className="bg-pink-500 hover:bg-pink-600 text-white border-2 border-pink-400"
-                size="lg"
+                size="sm"
               >
-                <Download className="w-5 h-5 mr-2" />
-                {isGeneratingPDF ? "Generando..." : "PDF"}
+                <Download className="w-4 h-4 mr-1" />
+                {isGeneratingPDF ? "..." : "PDF"}
               </Button>
             )}
           </div>
@@ -405,6 +456,7 @@ export default function MuralPage() {
                   placeholder="¿Cómo te llamas?"
                   className="mt-2 text-lg p-4 border-2 border-gray-300 focus:border-yellow-500 focus:ring-4 focus:ring-yellow-200 focus:outline-none hover:border-yellow-300 transition-all duration-200 bg-white hover:bg-yellow-50/50 focus:bg-yellow-50/30"
                   required
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -420,6 +472,7 @@ export default function MuralPage() {
                   className="mt-2 text-lg p-4 border-2 border-gray-300 focus:border-yellow-500 focus:ring-4 focus:ring-yellow-200 focus:outline-none hover:border-yellow-300 transition-all duration-200 min-h-[120px] resize-none bg-white hover:bg-yellow-50/50 focus:bg-yellow-50/30"
                   maxLength={200}
                   required
+                  disabled={isSubmitting}
                 />
                 <p className="text-sm text-gray-500 mt-2">{newMessage.length}/200 caracteres</p>
               </div>
@@ -428,10 +481,10 @@ export default function MuralPage() {
                 type="submit"
                 size="lg"
                 className="w-full bg-yellow-500 hover:bg-yellow-600 text-white py-4 text-lg rounded-full"
-                disabled={!newMessage.trim() || !authorName.trim()}
+                disabled={!newMessage.trim() || !authorName.trim() || isSubmitting}
               >
                 <Send className="w-5 h-5 mr-2" />
-                Enviar Mensaje
+                {isSubmitting ? "Enviando..." : "Enviar Mensaje"}
               </Button>
             </form>
           </CardContent>
@@ -475,7 +528,7 @@ export default function MuralPage() {
                       <p className="font-semibold text-base">- {message.author}</p>
                     </div>
 
-                    <p className="text-sm opacity-75 mt-2">{message.timestamp.toLocaleString()}</p>
+                    <p className="text-sm opacity-75 mt-2">{new Date(message.timestamp).toLocaleString()}</p>
                   </div>
                 </CardContent>
               </Card>
