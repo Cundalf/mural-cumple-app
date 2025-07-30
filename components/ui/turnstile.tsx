@@ -82,6 +82,7 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
     const [scriptError, setScriptError] = useState<string | null>(null)
     const scriptTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    const [showEmergencyButton, setShowEmergencyButton] = useState(false)
     
     // Resetear isDestroyed cuando el componente se monta
     useEffect(() => {
@@ -242,81 +243,57 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
           theme,
           size,
           callback: (token: string) => {
-            console.log('✅ Token recibido exitosamente')
-            setRetryCount(0)
+            console.log('🎉 Turnstile verificado exitosamente con token:', token.substring(0, 20) + '...')
             onVerify(token)
           },
-          'error-callback': (errorCode: string) => {
-            if (!isDestroyed) {
-              let errorMessage = 'Error en la verificación. Inténtalo de nuevo.'
-              
-              switch (errorCode) {
-                case '110000':
-                  errorMessage = 'Token de verificación inválido o expirado.'
-                  break
-                case '110001':
-                  errorMessage = 'Token de verificación ya usado.'
-                  break
-                case '110002':
-                  errorMessage = 'Dominio no autorizado.'
-                  break
-                case '110003':
-                  errorMessage = 'Clave de sitio inválida.'
-                  break
-                case '110004':
-                  errorMessage = 'Token de verificación malformado.'
-                  break
-                case '110005':
-                  errorMessage = 'Token de verificación no encontrado.'
-                  break
-                case '110006':
-                  errorMessage = 'Error interno del servidor.'
-                  break
-                case '110007':
-                  errorMessage = 'Token de verificación expirado.'
-                  break
-                case '300030':
-                  errorMessage = 'Tiempo de espera agotado en la verificación.'
-                  break
-                default:
-                  errorMessage = `Error de verificación (${errorCode})`
-              }
-
-              handleError(errorMessage, autoResetOnError)
+          'error-callback': (error: string) => {
+            console.error('❌ Error en Turnstile:', error)
+            setScriptError(error)
+            if (onError) onError(error)
+            
+            if (autoResetOnError && retryCount < maxRetries) {
+              console.log(`🔄 Reintentando en ${RETRY_DELAY}ms... (${retryCount + 1}/${maxRetries})`)
+              retryTimeoutRef.current = setTimeout(() => {
+                setRetryCount(prev => prev + 1)
+                setWidgetId(null)
+                setIsRendering(false)
+              }, RETRY_DELAY)
             }
           },
           'expired-callback': () => {
-            if (!isDestroyed) {
-              onExpire?.()
-              if (autoResetOnError) {
-                setTimeout(() => {
-                  if (!isDestroyed && widgetId) {
-                    try {
-                      window.turnstile.reset(widgetId)
-                    } catch (error) {
-                      console.warn('Error al resetear widget expirado:', error)
-                      destroyWidget()
-                    }
-                  }
-                }, 100)
-              }
-            }
+            console.log('⏰ Token de Turnstile expirado')
+            if (onExpire) onExpire()
           },
           'unsupported-callback': () => {
-            if (!isDestroyed) {
-              handleError('Tu navegador no es compatible con la verificación.', false)
-            }
-          },
-          'timeout-callback': () => {
-            if (!isDestroyed) {
-              handleError('La verificación tardó demasiado tiempo.', autoResetOnError)
-            }
+            console.warn('⚠️ Navegador no soportado por Turnstile')
+            setScriptError('Navegador no soportado')
+            if (onError) onError('Navegador no soportado')
           }
         })
         
         console.log('✅ Widget renderizado exitosamente con ID:', id)
         setWidgetId(id)
         setIsRendering(false)
+        
+        // FORZAR VISIBILIDAD DEL CONTENEDOR
+        if (containerRef.current) {
+          containerRef.current.style.display = 'block'
+          containerRef.current.style.visibility = 'visible'
+          containerRef.current.style.opacity = '1'
+          containerRef.current.style.minHeight = '65px'
+          containerRef.current.style.width = '100%'
+          
+          // Buscar y forzar visibilidad del iframe si existe
+          setTimeout(() => {
+            const iframe = containerRef.current?.querySelector('iframe')
+            if (iframe) {
+              iframe.style.display = 'block'
+              iframe.style.visibility = 'visible'
+              iframe.style.opacity = '1'
+              console.log('🔧 Iframe forzado a visible')
+            }
+          }, 100)
+        }
         
       } catch (error) {
         setIsRendering(false)
@@ -411,6 +388,81 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
         }, 2000)
         
         return () => clearTimeout(checkWidget)
+      }
+    }, [widgetId])
+
+    // Mostrar botón de emergencia si no hay iframe visible
+    useEffect(() => {
+      if (widgetId) {
+        const checkIframe = setTimeout(() => {
+          const iframe = containerRef.current?.querySelector('iframe')
+          const isVisible = iframe && 
+            iframe.style.display !== 'none' && 
+            iframe.style.visibility !== 'hidden' &&
+            iframe.offsetWidth > 0 &&
+            iframe.offsetHeight > 0
+          
+          if (!isVisible) {
+            console.warn('⚠️ Iframe no visible, mostrando botón de emergencia')
+            setShowEmergencyButton(true)
+          }
+        }, 3000)
+        
+        return () => clearTimeout(checkIframe)
+      }
+    }, [widgetId])
+
+    const forceVisibility = () => {
+      const iframe = containerRef.current?.querySelector('iframe')
+      if (iframe) {
+        iframe.style.setProperty('display', 'block', 'important')
+        iframe.style.setProperty('visibility', 'visible', 'important')
+        iframe.style.setProperty('opacity', '1', 'important')
+        iframe.style.setProperty('width', '100%', 'important')
+        iframe.style.setProperty('height', '65px', 'important')
+        iframe.style.setProperty('border', 'none', 'important')
+        iframe.style.setProperty('margin', '0', 'important')
+        iframe.style.setProperty('padding', '0', 'important')
+        iframe.style.setProperty('z-index', '9999', 'important')
+        
+        console.log('🚨 VISIBILIDAD FORZADA MANUALMENTE')
+        setShowEmergencyButton(false)
+      }
+    }
+
+    // Monitor para arreglar problemas de visibilidad automáticamente
+    useEffect(() => {
+      if (widgetId && containerRef.current) {
+        const fixVisibility = () => {
+          const iframe = containerRef.current?.querySelector('iframe')
+          if (iframe) {
+            // Forzar visibilidad del iframe
+            iframe.style.setProperty('display', 'block', 'important')
+            iframe.style.setProperty('visibility', 'visible', 'important')
+            iframe.style.setProperty('opacity', '1', 'important')
+            iframe.style.setProperty('width', '100%', 'important')
+            iframe.style.setProperty('height', '65px', 'important')
+            iframe.style.setProperty('border', 'none', 'important')
+            iframe.style.setProperty('margin', '0', 'important')
+            iframe.style.setProperty('padding', '0', 'important')
+            
+            console.log('🔧 Iframe forzado a visible con !important')
+          }
+        }
+        
+        // Arreglar inmediatamente
+        fixVisibility()
+        
+        // Arreglar después de un delay
+        const timer1 = setTimeout(fixVisibility, 500)
+        const timer2 = setTimeout(fixVisibility, 1000)
+        const timer3 = setTimeout(fixVisibility, 2000)
+        
+        return () => {
+          clearTimeout(timer1)
+          clearTimeout(timer2)
+          clearTimeout(timer3)
+        }
       }
     }, [widgetId])
 
@@ -526,26 +578,32 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
       )
     }
 
-    return (
-      <div className={`turnstile-container ${className}`}>
-        <div 
-          ref={containerRef} 
-          style={{ 
-            width: '100%', 
-            display: 'block',
-            visibility: 'visible',
-            opacity: 1,
-            minHeight: '65px'
-          }} 
-        />
-        {isRendering && (
-          <div className="flex items-center justify-center p-4">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-            <span className="ml-2 text-sm text-gray-600">Cargando verificación...</span>
-          </div>
-        )}
-      </div>
-    )
+      return (
+    <div 
+      ref={containerRef}
+      className={`turnstile-container ${className}`}
+      style={{
+        display: 'block',
+        visibility: 'visible',
+        opacity: 1,
+        minHeight: '65px',
+        width: '100%',
+        position: 'relative',
+        zIndex: 1
+      }}
+    >
+      {showEmergencyButton && (
+        <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <button
+            onClick={forceVisibility}
+            className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors"
+          >
+            🚨 FORZAR VISIBILIDAD
+          </button>
+        </div>
+      )}
+    </div>
+  )
   }
 )
 
