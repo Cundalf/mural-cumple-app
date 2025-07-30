@@ -367,29 +367,74 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
       }
     }, [isScriptLoaded, widgetId, isRendering, isDestroyed, isResetting, siteKey])
 
-    // Verificar si el widget se renderizó correctamente después de un tiempo
-    useEffect(() => {
-      if (widgetId && containerRef.current) {
-        const checkWidget = setTimeout(() => {
-          const iframe = containerRef.current?.querySelector('iframe')
-          const hasIframe = !!iframe
-          const iframeSrc = iframe?.src || 'no-src'
-          
-          console.log('🔍 Verificación post-renderizado:', {
-            widgetId,
-            hasIframe,
-            iframeSrc: iframeSrc.substring(0, 100) + '...',
-            containerChildren: containerRef.current?.children.length || 0
-          })
-          
-          if (!hasIframe) {
-            console.warn('⚠️ Widget renderizado pero no se detecta iframe')
-          }
-        }, 2000)
-        
-        return () => clearTimeout(checkWidget)
-      }
-    }, [widgetId])
+         // Verificar si el widget se renderizó correctamente después de un tiempo
+     useEffect(() => {
+       if (widgetId && containerRef.current) {
+         const checkWidget = setTimeout(() => {
+           const iframe = containerRef.current?.querySelector('iframe')
+           const hasIframe = !!iframe
+           const iframeSrc = iframe?.src || 'no-src'
+           
+           console.log('🔍 Verificación post-renderizado:', {
+             widgetId,
+             hasIframe,
+             iframeSrc: iframeSrc.substring(0, 100) + '...',
+             containerChildren: containerRef.current?.children.length || 0
+           })
+           
+           if (!hasIframe) {
+             console.warn('⚠️ Widget renderizado pero no se detecta iframe')
+           }
+           
+           // DIAGNÓSTICO PROFESIONAL EN PRODUCCIÓN
+           if (process.env.NODE_ENV === 'production' && hasIframe) {
+             const diagnoseProductionIssue = () => {
+               const computedStyle = window.getComputedStyle(iframe)
+               const rect = iframe.getBoundingClientRect()
+               
+               console.log('🔍 DIAGNÓSTICO PRODUCCIÓN:', {
+                 // Estilos básicos
+                 display: computedStyle.display,
+                 visibility: computedStyle.visibility,
+                 opacity: computedStyle.opacity,
+                 position: computedStyle.position,
+                 zIndex: computedStyle.zIndex,
+                 
+                 // Dimensiones
+                 width: computedStyle.width,
+                 height: computedStyle.height,
+                 offsetWidth: iframe.offsetWidth,
+                 offsetHeight: iframe.offsetHeight,
+                 
+                 // Posición
+                 top: rect.top,
+                 left: rect.left,
+                 bottom: rect.bottom,
+                 right: rect.right,
+                 
+                 // Contenedor padre
+                 parentDisplay: window.getComputedStyle(containerRef.current!).display,
+                 parentVisibility: window.getComputedStyle(containerRef.current!).visibility,
+                 parentOverflow: window.getComputedStyle(containerRef.current!).overflow,
+                 
+                 // Verificar si está en viewport
+                 inViewport: rect.top >= 0 && rect.left >= 0 && rect.bottom <= window.innerHeight && rect.right <= window.innerWidth,
+                 
+                 // Verificar si hay CSS que lo oculte
+                 hiddenByCSS: computedStyle.display === 'none' || computedStyle.visibility === 'hidden' || parseFloat(computedStyle.opacity) === 0,
+                 
+                 // Verificar si tiene dimensiones
+                 hasDimensions: iframe.offsetWidth > 0 && iframe.offsetHeight > 0
+               })
+             }
+             
+             diagnoseProductionIssue()
+           }
+         }, 2000)
+         
+         return () => clearTimeout(checkWidget)
+       }
+     }, [widgetId])
 
     // Mostrar botón de emergencia si no hay iframe visible
     useEffect(() => {
@@ -611,3 +656,5 @@ Turnstile.displayName = 'Turnstile'
 
 export { Turnstile }
 export type { TurnstileRef }
+
+
