@@ -32,9 +32,6 @@ html {
             src="https://challenges.cloudflare.com/turnstile/v0/api.js" 
             async 
             defer
-            onError={(e) => {
-              console.error('Error cargando Turnstile script:', e)
-            }}
           />
         )}
         {/* Error handler para scripts externos */}
@@ -66,7 +63,10 @@ html {
               const script = document.querySelector('script[src*="turnstile"]');
               if (script) {
                 script.onload = window.onTurnstileLoaded;
-                script.onerror = window.onTurnstileError;
+                script.onerror = function(e) {
+                  console.error('Error cargando Turnstile script:', e);
+                  window.onTurnstileError();
+                };
               }
             }
             

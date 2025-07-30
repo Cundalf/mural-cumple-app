@@ -42,9 +42,9 @@ const nextConfig = {
     ]
   },
   // Configuración para optimización en producción
-  experimental: {
-    optimizeCss: true,
-  },
+  // experimental: {
+  //   optimizeCss: true, // Comentado para evitar error de build con 'critters'
+  // },
   // Configuración para debugging en producción
   ...(process.env.NODE_ENV === 'production' && {
     logging: {
