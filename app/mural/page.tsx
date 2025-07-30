@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { ArrowLeft, Heart, Send, Trash2, Download, Loader2 } from "lucide-react"
 import { useRealtime } from "@/hooks/use-realtime"
 import { Turnstile, type TurnstileRef } from "@/components/ui/turnstile"
+import { TurnstileDebug } from "@/components/ui/turnstile-debug"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
 import { useToast } from "@/hooks/use-toast"
 import { useTurnstile } from "@/hooks/use-turnstile"
@@ -569,6 +570,9 @@ export default function MuralPage() {
                   />
                 </div>
               )}
+              
+              {/* Componente de diagnóstico para desarrollo */}
+              <TurnstileDebug siteKey={siteKey} className="mt-4" />
               
               {turnstile.error && (
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">

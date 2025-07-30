@@ -12,6 +12,7 @@ import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2, Loader2, ChevronLeft, C
 import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "@/components/ui/dialog"
 import { useRealtime } from "@/hooks/use-realtime"
 import { Turnstile, type TurnstileRef } from "@/components/ui/turnstile"
+import { TurnstileDebug } from "@/components/ui/turnstile-debug"
 import { useToast } from "@/hooks/use-toast"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
 import { useTurnstile } from "@/hooks/use-turnstile"
@@ -345,6 +346,9 @@ export default function GaleriaPage() {
                     />
                   </div>
               )}
+              
+              {/* Componente de diagnóstico para desarrollo */}
+              <TurnstileDebug siteKey={siteKey} className="mt-4" />
               
               {turnstile.error && (
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">

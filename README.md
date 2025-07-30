@@ -58,4 +58,35 @@ docker-compose up -d --build
 
 - **Colores**: Editar array `colors` en `app/mural/page.tsx`
 - **Límites de archivos**: Modificar `app/api/media/upload/route.ts`
-- **Estilos**: Tailwind CSS en los componentes 
+- **Estilos**: Tailwind CSS en los componentes
+
+## Solución de Problemas 🔧
+
+### Cloudflare Turnstile no se renderiza en producción
+
+Si tienes problemas con Turnstile en producción:
+
+1. **Ejecuta el diagnóstico:**
+   ```bash
+   npm run check-turnstile
+   ```
+
+2. **Verifica las variables de entorno:**
+   ```bash
+   NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=tu_site_key
+   CLOUDFLARE_TURNSTILE_SECRET_KEY=tu_secret_key
+   NEXT_PUBLIC_DISABLE_TURNSTILE=false
+   ```
+
+3. **Habilita el modo debug:**
+   ```bash
+   NEXT_PUBLIC_SHOW_TURNSTILE_DEBUG=true
+   ```
+
+4. **Consulta la guía completa:** [TURNSTILE_TROUBLESHOOTING.md](./TURNSTILE_TROUBLESHOOTING.md)
+
+### Problemas comunes:
+- Variables de entorno no configuradas
+- Dominio no autorizado en Cloudflare
+- Bloqueadores de anuncios
+- Claves inválidas o expiradas 

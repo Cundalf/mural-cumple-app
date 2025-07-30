@@ -44,6 +44,7 @@ declare global {
     }
     turnstileState: 'unloaded' | 'loading' | 'loaded' | 'error'
     onTurnstileLoaded?: () => void
+    onTurnstileError?: () => void
   }
 }
 
@@ -75,15 +76,17 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
     const [widgetId, setWidgetId] = useState<string | null>(null)
     const [isScriptLoaded, setIsScriptLoaded] = useState(false)
     const [isRendering, setIsRendering] = useState(false)
-      const [retryCount, setRetryCount] = useState(0)
-  const [isDestroyed, setIsDestroyed] = useState(false)
-  const [isResetting, setIsResetting] = useState(false) // Nuevo estado para evitar resets simultáneos
-  const scriptTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    const [retryCount, setRetryCount] = useState(0)
+    const [isDestroyed, setIsDestroyed] = useState(false)
+    const [isResetting, setIsResetting] = useState(false)
+    const [scriptError, setScriptError] = useState<string | null>(null)
+    const scriptTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     
     // Resetear isDestroyed cuando el componente se monta
     useEffect(() => {
       setIsDestroyed(false)
+      setScriptError(null)
       
       // Monitor para errores globales que podrían afectar Turnstile
       const handleGlobalError = (event: ErrorEvent) => {
@@ -92,12 +95,29 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
         }
       }
       
+      // Escuchar eventos personalizados de carga de script
+      const handleTurnstileLoaded = () => {
+        console.log('📡 Evento turnstileLoaded recibido')
+        setIsScriptLoaded(true)
+        setScriptError(null)
+      }
+      
+      const handleTurnstileError = () => {
+        console.error('📡 Evento turnstileError recibido')
+        setScriptError('Error al cargar el script de verificación')
+        onError?.('Error al cargar el script de verificación')
+      }
+      
       window.addEventListener('error', handleGlobalError)
+      window.addEventListener('turnstileLoaded', handleTurnstileLoaded)
+      window.addEventListener('turnstileError', handleTurnstileError)
       
       return () => {
         window.removeEventListener('error', handleGlobalError)
+        window.removeEventListener('turnstileLoaded', handleTurnstileLoaded)
+        window.removeEventListener('turnstileError', handleTurnstileError)
       }
-    }, [])
+    }, [onError])
 
     const cleanup = useCallback(() => {
       if (scriptTimeoutRef.current) {
@@ -275,29 +295,31 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
       }
     }
 
-    // Cargar script de Turnstile (solo una vez globalmente)
+    // Verificar estado del script de Turnstile
     useEffect(() => {
       if (typeof window === 'undefined' || isDestroyed) return
 
-      // Verificar si ya existe el script en el DOM
+      // Verificar si el script ya está cargado
+      if (window.turnstileState === 'loaded' && window.turnstile) {
+        setIsScriptLoaded(true)
+        return
+      }
+
+      // Verificar si hay un script existente
       const existingScript = document.querySelector('script[src*="turnstile"]')
       if (existingScript && window.turnstile) {
         setIsScriptLoaded(true)
         return
       }
 
-      if (window.turnstileState === 'loaded' && window.turnstile) {
-        setIsScriptLoaded(true)
-        return
-      }
-
+      // Si el script está cargándose, esperar
       if (window.turnstileState === 'loading') {
         const checkInterval = setInterval(() => {
           if (window.turnstileState === 'loaded' && window.turnstile) {
             setIsScriptLoaded(true)
             clearInterval(checkInterval)
           } else if (window.turnstileState === 'error') {
-            handleError('Error al cargar el script de verificación.', false)
+            setScriptError('Error al cargar el script de verificación')
             clearInterval(checkInterval)
           }
         }, 100)
@@ -305,55 +327,29 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
         return () => clearInterval(checkInterval)
       }
 
-      // Solo crear script si no existe
+      // Si no hay script y no está cargándose, configurar timeout
       if (!existingScript && !window.turnstileState) {
-        window.turnstileState = 'loading'
-        
-        const script = document.createElement('script')
-        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoaded'
-        script.async = true
-        script.defer = true
-        script.id = 'turnstile-script'
-
-        window.onTurnstileLoaded = () => {
-          if (scriptTimeoutRef.current) {
-            clearTimeout(scriptTimeoutRef.current)
-            scriptTimeoutRef.current = undefined
-          }
-          window.turnstileState = 'loaded'
-          setIsScriptLoaded(true)
-        }
-
-        script.onerror = () => {
-          cleanup()
-          window.turnstileState = 'error'
-          handleError('Error al cargar el script de verificación.', false)
-        }
-
-        // Timeout para carga del script
         scriptTimeoutRef.current = setTimeout(() => {
-          if (window.turnstileState === 'loading') {
-            window.turnstileState = 'error'
-            handleError('Tiempo de espera agotado al cargar la verificación.', false)
+          if (!window.turnstile) {
+            setScriptError('Tiempo de espera agotado al cargar la verificación')
+            onError?.('Tiempo de espera agotado al cargar la verificación')
           }
         }, SCRIPT_LOAD_TIMEOUT)
-
-      document.head.appendChild(script)
       }
 
       return () => {
         cleanup()
       }
-    }, [isDestroyed, handleError, cleanup])
+    }, [isDestroyed, onError, cleanup])
 
     // Renderizar widget cuando el script esté listo
     useEffect(() => {
       if (isScriptLoaded && !widgetId && !isRendering && !isDestroyed && !isResetting && containerRef.current && siteKey) {
         renderWidget()
       }
-    }, [isScriptLoaded, widgetId, isRendering, isDestroyed, isResetting, siteKey]) // Remover renderWidget para estabilizar
+    }, [isScriptLoaded, widgetId, isRendering, isDestroyed, isResetting, siteKey])
 
-    // Cleanup al desmontar (solo al desmontar realmente)
+    // Cleanup al desmontar
     useEffect(() => {
       return () => {
         setIsDestroyed(true)
@@ -420,7 +416,7 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
         
         try {
           window.turnstile.execute(widgetId)
-          } catch (error) {
+        } catch (error) {
           console.error('Error al ejecutar Turnstile:', error)
         }
       },
@@ -442,6 +438,25 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
           <p className='text-sm text-center text-yellow-600'>
             Advertencia: La sitekey de Turnstile no está configurada.
           </p>
+        </div>
+      )
+    }
+
+    if (scriptError) {
+      return (
+        <div className={`p-4 border-dashed border-2 border-red-300 rounded-md ${className}`}>
+          <p className='text-sm text-center text-red-600'>
+            Error: {scriptError}
+          </p>
+          <button 
+            onClick={() => {
+              setScriptError(null)
+              window.location.reload()
+            }}
+            className='mt-2 px-3 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200'
+          >
+            Recargar página
+          </button>
         </div>
       )
     }
