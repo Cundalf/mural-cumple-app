@@ -8,10 +8,12 @@ import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2 } from "lucide-react"
+import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2, Loader2 } from "lucide-react"
 import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "@/components/ui/dialog"
 import { useRealtime } from "@/hooks/use-realtime"
 import { Turnstile, useTurnstile } from "@/components/ui/turnstile"
+import { useToast } from "@/hooks/use-toast"
+import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
 
 interface MediaItem {
   id: string
@@ -22,15 +24,36 @@ interface MediaItem {
 }
 
 export default function GaleriaPage() {
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null)
   const [isUploading, setIsUploading] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
+  const { toast } = useToast()
   
   // Turnstile hook para protección contra bots
   const { token: turnstileToken, error: turnstileError, handleVerify, handleError, handleExpire, reset, isDisabled: isTurnstileDisabled } = useTurnstile()
+
+  // Hook de scroll infinito para cargar media
+  const {
+    items: mediaItems,
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    error: loadError,
+    refresh,
+    setItems: setMediaItems
+  } = useInfiniteScroll<MediaItem>({
+    apiEndpoint: '/api/media',
+    limit: 20,
+    onError: (error) => {
+      console.error('Error al cargar archivos multimedia:', error)
+      toast({
+        title: "Error al cargar galería",
+        description: "No se pudieron cargar algunos archivos multimedia",
+        variant: "destructive",
+      })
+    }
+  })
 
   // Handlers estables para eventos en tiempo real
   const handleMediaUploaded = useCallback((media: MediaItem) => {
@@ -42,16 +65,17 @@ export default function GaleriaPage() {
       }
       return [media, ...prev];
     });
-  }, []);
+  }, [setMediaItems]);
 
   const handleMediaDeleted = useCallback((data: { id: string }) => {
     setMediaItems(prev => prev.filter(item => item.id !== data.id));
     setSelectedMedia(prev => prev?.id === data.id ? null : prev);
-  }, []);
+  }, [setMediaItems]);
 
   const handleConnected = useCallback(() => {
-    // Conexión establecida
-  }, []);
+    // Conexión establecida - refrescar datos
+    refresh()
+  }, [refresh]);
 
   // Configurar tiempo real con handlers estables
   const { disconnect, reconnect, isConnected } = useRealtime({
@@ -60,38 +84,46 @@ export default function GaleriaPage() {
     onConnected: handleConnected
   });
 
-  // Cargar archivos multimedia al iniciar
-  useEffect(() => {
-    const loadMedia = async () => {
-      try {
-        const response = await fetch('/api/media')
-        if (response.ok) {
-          const media = await response.json()
-          setMediaItems(media)
-        }
-      } catch (error) {
-        console.error('Error al cargar archivos multimedia:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadMedia()
-  }, [])
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
     if (!files || files.length === 0) return
 
-    // Verificar que Turnstile haya sido completado (solo si no está deshabilitado)
-    if (!isTurnstileDisabled && !turnstileToken) {
-      if (turnstileError) {
-        alert(`Error de verificación: ${turnstileError}`)
-      } else {
-        alert('Por favor, completa la verificación de seguridad antes de subir archivos')
-      }
+    // Prevenir subida múltiple
+    if (isUploading) {
       event.target.value = ""
       return
+    }
+
+    // Verificar que Turnstile haya sido completado (solo si no está deshabilitado)
+    if (!isTurnstileDisabled && !turnstileToken) {
+      event.target.value = ""
+      return
+    }
+
+    // Validar tamaño y tipo de archivos
+    const maxSize = 100 * 1024 * 1024 // 100MB (límite de Cloudflare)
+    const allowedTypes = ['image/', 'video/']
+    
+    for (let file of Array.from(files)) {
+      if (file.size > maxSize) {
+        toast({
+          title: "Archivo muy grande",
+          description: `${file.name} supera el límite de 100MB`,
+          variant: "destructive",
+        })
+        event.target.value = ""
+        return
+      }
+      
+      if (!allowedTypes.some(type => file.type.startsWith(type))) {
+        toast({
+          title: "Tipo de archivo no válido",
+          description: `${file.name} no es una imagen o video válido`,
+          variant: "destructive",
+        })
+        event.target.value = ""
+        return
+      }
     }
 
     setIsUploading(true)
@@ -118,12 +150,29 @@ export default function GaleriaPage() {
       }
 
       // Los archivos se agregarán automáticamente via eventos en tiempo real
-      reset() // Resetear Turnstile para el siguiente envío
+      // Solo resetear Turnstile si no está deshabilitado
+      if (!isTurnstileDisabled) {
+        reset() // Resetear Turnstile para el siguiente envío
+      }
+      
+      // Mostrar mensaje de éxito con toast
+      toast({
+        title: "¡Archivos subidos!",
+        description: `${files.length} archivo(s) subido(s) exitosamente`,
+      })
     } catch (error) {
       console.error('Error al subir archivos:', error)
-      alert('Error al subir archivos. Por favor, intenta de nuevo.')
+      const errorMessage = error instanceof Error ? error.message : 'Error al subir archivos. Por favor, intenta de nuevo.'
+      toast({
+        title: "Error al subir archivos",
+        description: errorMessage,
+        variant: "destructive",
+      })
     } finally {
-      setIsUploading(false)
+      // Asegurarse de que siempre se resetee el estado
+      setTimeout(() => {
+        setIsUploading(false)
+      }, 100) // Pequeño delay para evitar problemas de UI
       event.target.value = ""
     }
   }
@@ -178,43 +227,51 @@ export default function GaleriaPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-pink-50 to-purple-50">
       <div className="container mx-auto px-4 py-6">
         {/* Header */}
-        <div className="flex items-center mb-8">
-          <Link href="/">
-            <Button
-              variant="outline"
-              size="lg"
-              className="border-2 border-blue-300 text-blue-700 hover:bg-blue-100 bg-transparent"
-            >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              Volver
-            </Button>
-          </Link>
-          <div className="flex-1 flex justify-center">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-800">Galería de Recuerdos</h1>
-          </div>
-          <div className="w-[120px] flex justify-end">
-            {/* Indicador de conexión mejorado */}
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
-              isConnected() 
-                ? 'bg-green-100 text-green-800 border border-green-200' 
-                : 'bg-red-100 text-red-800 border border-red-200'
-            }`}>
-              <div className={`w-2 h-2 rounded-full ${
-                isConnected() ? 'bg-green-500' : 'bg-red-500'
-              }`} />
-              {isConnected() ? 'En línea' : 'Desconectado'}
+        <div className="mb-8 mx-2 sm:mx-0">
+          <div className="flex items-center justify-between gap-2">
+            <Link href="/" className="flex-shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-2 border-blue-300 text-blue-700 hover:bg-blue-100 bg-transparent text-xs sm:text-sm px-3 sm:px-4 min-w-[60px] sm:min-w-auto"
+              >
+                <ArrowLeft className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Volver</span>
+              </Button>
+            </Link>
+            
+            <div className="flex-1 flex justify-center min-w-0 px-2">
+              <h1 className="text-lg sm:text-2xl md:text-4xl font-bold text-gray-800 text-center truncate">Galería de Recuerdos</h1>
+            </div>
+            
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              {/* Indicador de conexión compacto */}
+              <div className={`flex items-center gap-1 px-1 sm:px-2 py-1 rounded-full ${
+                isConnected() 
+                  ? 'bg-green-100 border border-green-200' 
+                  : 'bg-red-100 border border-red-200'
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${
+                  isConnected() ? 'bg-green-500' : 'bg-red-500'
+                }`} />
+                <span className={`text-xs font-medium hidden sm:inline ${
+                  isConnected() ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {isConnected() ? 'En línea' : 'Desconectado'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Upload Section */}
-        <Card className="mb-8 border-2 border-blue-200 bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-6">
+        <Card className="mb-8 border-2 border-blue-200 bg-white/80 backdrop-blur-sm mx-2 sm:mx-0">
+          <CardContent className="p-4 sm:p-6">
             <div className="text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-200 rounded-full mb-4">
-                <Upload className="w-8 h-8 text-blue-600" />
+              <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-blue-200 rounded-full mb-4">
+                <Upload className="w-6 sm:w-8 h-6 sm:h-8 text-blue-600" />
               </div>
-              <h2 className="text-2xl font-semibold text-gray-800 mb-6">Comparte tus fotos y videos</h2>
+              <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 mb-4 sm:mb-6">Comparte tus fotos y videos</h2>
 
               <div className="relative">
                 <Input
@@ -274,7 +331,7 @@ export default function GaleriaPage() {
         </Card>
 
         {/* Media Grid */}
-        {mediaItems.length === 0 ? (
+        {mediaItems.length === 0 && !isLoading ? (
           <Card className="border-2 border-gray-200 bg-white/60">
             <CardContent className="p-12 text-center">
               <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-200 rounded-full mb-6">
@@ -285,88 +342,128 @@ export default function GaleriaPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {mediaItems.map((item) => (
-              <Dialog key={item.id}>
-                <DialogTrigger asChild>
-                  <Card className="cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-pink-200 hover:border-pink-300 group overflow-hidden relative">
-                    {isAdmin && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {mediaItems.map((item) => (
+                <Dialog key={item.id}>
+                  <DialogTrigger asChild>
+                    <Card className="cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-pink-200 hover:border-pink-300 group overflow-hidden relative">
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteMedia(item.id)
+                          }}
+                          className="absolute top-2 right-2 z-20 text-white hover:text-red-600 hover:bg-white/90 bg-black/50 rounded-full p-2"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                      <CardContent className="p-0 relative aspect-square">
+                        {item.type === "image" ? (
+                          <img
+                            src={item.url || "/placeholder.svg"}
+                            alt="Imagen compartida"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="relative w-full h-full bg-gray-900">
+                            <video src={item.url} className="w-full h-full object-cover" muted />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                              <Video className="w-12 h-12 text-white" />
+                            </div>
+                          </div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+                          <p className="text-white/80 text-xs">{new Date(item.timestamp).toLocaleString()}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </DialogTrigger>
+                  <DialogContent
+                    className="max-w-5xl max-h-[95vh] p-0 bg-black/95 border-0"
+                    aria-describedby="media-description"
+                  >
+                    <DialogTitle className="sr-only">
+                      Ver {item.type === "image" ? "imagen" : "video"} en tamaño completo
+                    </DialogTitle>
+                    <DialogClose asChild>
                       <Button
                         variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          deleteMedia(item.id)
-                        }}
-                        className="absolute top-2 right-2 z-20 text-white hover:text-red-600 hover:bg-white/90 bg-black/50 rounded-full p-2"
+                        size="lg"
+                        className="absolute top-4 right-4 z-50 text-white hover:text-gray-300 hover:bg-white/10 rounded-full p-3"
+                        aria-label="Cerrar"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <X className="w-8 h-8" />
                       </Button>
-                    )}
-                    <CardContent className="p-0 relative aspect-square">
+                    </DialogClose>
+                    <div className="flex items-center justify-center min-h-[80vh] p-4">
                       {item.type === "image" ? (
                         <img
                           src={item.url || "/placeholder.svg"}
                           alt="Imagen compartida"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="max-w-full max-h-full object-contain rounded-lg"
                         />
                       ) : (
-                        <div className="relative w-full h-full bg-gray-900">
-                          <video src={item.url} className="w-full h-full object-cover" muted />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                            <Video className="w-12 h-12 text-white" />
-                          </div>
-                        </div>
+                        <video
+                          src={item.url}
+                          controls
+                          className="max-w-full max-h-full object-contain rounded-lg"
+                          autoPlay
+                        />
                       )}
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                        <p className="text-white/80 text-xs">{new Date(item.timestamp).toLocaleString()}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </DialogTrigger>
-                <DialogContent
-                  className="max-w-5xl max-h-[95vh] p-0 bg-black/95 border-0"
-                  aria-describedby="media-description"
-                >
-                  <DialogTitle className="sr-only">
-                    Ver {item.type === "image" ? "imagen" : "video"} en tamaño completo
-                  </DialogTitle>
-                  <DialogClose asChild>
+                    </div>
+                    <div className="absolute bottom-4 left-4 text-white/80 bg-black/50 px-4 py-2 rounded-lg">
+                      <p className="text-sm">Subido el {new Date(item.timestamp).toLocaleString()}</p>
+                    </div>
+                    <div id="media-description" className="sr-only">
+                      Modal para ver {item.type === "image" ? "imagen" : "video"} en tamaño completo
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              ))}
+            </div>
+
+            {/* Indicador de carga más elementos */}
+            {isLoadingMore && (
+              <div className="flex justify-center items-center py-8">
+                <div className="flex items-center gap-3 px-6 py-3 bg-white/80 backdrop-blur-sm rounded-full border border-blue-200">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                  <span className="text-blue-700 font-medium">Cargando más recuerdos...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Mensaje de fin de contenido */}
+            {!hasMore && mediaItems.length > 0 && (
+              <div className="flex justify-center items-center py-8">
+                <div className="px-6 py-3 bg-green-50 border border-green-200 rounded-full">
+                  <span className="text-green-700 font-medium">✨ ¡Has visto todos los recuerdos! ✨</span>
+                </div>
+              </div>
+            )}
+
+            {/* Error de carga */}
+            {loadError && (
+              <div className="flex justify-center items-center py-8">
+                <Card className="border-2 border-red-200 bg-red-50">
+                  <CardContent className="p-6 text-center">
+                    <p className="text-red-700 font-medium mb-2">Error al cargar más contenido</p>
+                    <p className="text-red-600 text-sm mb-4">{loadError}</p>
                     <Button
-                      variant="ghost"
-                      size="lg"
-                      className="absolute top-4 right-4 z-50 text-white hover:text-gray-300 hover:bg-white/10 rounded-full p-3"
-                      aria-label="Cerrar"
+                      onClick={refresh}
+                      variant="outline"
+                      className="border-red-300 text-red-700 hover:bg-red-100"
                     >
-                      <X className="w-8 h-8" />
+                      Intentar de nuevo
                     </Button>
-                  </DialogClose>
-                  <div className="flex items-center justify-center min-h-[80vh] p-4">
-                    {item.type === "image" ? (
-                      <img
-                        src={item.url || "/placeholder.svg"}
-                        alt="Imagen compartida"
-                        className="max-w-full max-h-full object-contain rounded-lg"
-                      />
-                    ) : (
-                      <video
-                        src={item.url}
-                        controls
-                        className="max-w-full max-h-full object-contain rounded-lg"
-                        autoPlay
-                      />
-                    )}
-                  </div>
-                  <div className="absolute bottom-4 left-4 text-white/80 bg-black/50 px-4 py-2 rounded-lg">
-                    <p className="text-sm">Subido el {new Date(item.timestamp).toLocaleString()}</p>
-                  </div>
-                  <div id="media-description" className="sr-only">
-                    Modal para ver {item.type === "image" ? "imagen" : "video"} en tamaño completo
-                  </div>
-                </DialogContent>
-              </Dialog>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

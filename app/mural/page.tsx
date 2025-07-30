@@ -10,9 +10,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Heart, Send, Trash2, Download } from "lucide-react"
+import { ArrowLeft, Heart, Send, Trash2, Download, Loader2 } from "lucide-react"
 import { useRealtime } from "@/hooks/use-realtime"
 import { Turnstile, useTurnstile } from "@/components/ui/turnstile"
+import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
+import { useToast } from "@/hooks/use-toast"
 
 interface Message {
   id: string
@@ -42,30 +44,52 @@ const colors = [
 ]
 
 export default function MuralPage() {
-  const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [authorName, setAuthorName] = useState("")
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
+  const { toast } = useToast()
   
   // Turnstile hook para protección contra bots
   const { token: turnstileToken, error: turnstileError, handleVerify, handleError, handleExpire, reset, isDisabled: isTurnstileDisabled } = useTurnstile()
 
+  // Hook de scroll infinito para cargar mensajes
+  const {
+    items: messages,
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    error: loadError,
+    refresh,
+    setItems: setMessages
+  } = useInfiniteScroll<Message>({
+    apiEndpoint: '/api/messages',
+    limit: 30,
+    onError: (error) => {
+      console.error('Error al cargar mensajes:', error)
+      toast({
+        title: "Error al cargar mensajes",
+        description: "No se pudieron cargar algunos mensajes",
+        variant: "destructive",
+      })
+    }
+  })
+
   // Handlers estables para eventos en tiempo real
   const handleMessageCreated = useCallback((message: Message) => {
     setMessages(prev => [message, ...prev]);
-  }, []);
+  }, [setMessages]);
 
   const handleMessageDeleted = useCallback((data: { id: string }) => {
     setMessages(prev => prev.filter(msg => msg.id !== data.id));
-  }, []);
+  }, [setMessages]);
 
   const handleConnected = useCallback(() => {
-    // Conexión establecida
-  }, []);
+    // Conexión establecida - refrescar datos
+    refresh()
+  }, [refresh]);
 
   // Configurar tiempo real con handlers estables
   const { disconnect, reconnect, isConnected } = useRealtime({
@@ -74,37 +98,20 @@ export default function MuralPage() {
     onConnected: handleConnected
   });
 
-  // Cargar mensajes al iniciar
-  useEffect(() => {
-    const loadMessages = async () => {
-      try {
-        const response = await fetch('/api/messages')
-        if (response.ok) {
-          const messagesData = await response.json()
-          setMessages(messagesData)
-        }
-      } catch (error) {
-        console.error('Error al cargar mensajes:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadMessages()
-  }, [])
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!newMessage.trim() || !authorName.trim() || isSubmitting) return
+    // Validaciones básicas
+    if (!newMessage.trim() || !authorName.trim()) {
+      return
+    }
+
+    if (isSubmitting) {
+      return
+    }
     
     // Verificar que Turnstile haya sido completado (solo si no está deshabilitado)
     if (!isTurnstileDisabled && !turnstileToken) {
-      if (turnstileError) {
-        alert(`Error de verificación: ${turnstileError}`)
-      } else {
-        alert('Por favor, completa la verificación de seguridad')
-      }
       return
     }
 
@@ -130,16 +137,21 @@ export default function MuralPage() {
         // El mensaje se agregará automáticamente via eventos en tiempo real
         setNewMessage("")
         setAuthorName("")
-        reset() // Resetear Turnstile para el siguiente envío
+        // Solo resetear Turnstile si no está deshabilitado
+        if (!isTurnstileDisabled) {
+          reset() // Resetear Turnstile para el siguiente envío
+        }
       } else {
         const errorData = await response.json()
         throw new Error(errorData.message || 'Error al enviar mensaje')
       }
     } catch (error) {
       console.error('Error al enviar mensaje:', error)
-      alert('Error al enviar mensaje. Por favor, intenta de nuevo.')
     } finally {
-      setIsSubmitting(false)
+      // Asegurarse de que siempre se resetee el estado de envío
+      setTimeout(() => {
+        setIsSubmitting(false)
+      }, 100) // Pequeño delay para evitar doble clicks
     }
   }
 
@@ -414,56 +426,66 @@ export default function MuralPage() {
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-pink-50 to-blue-50">
       <div className="container mx-auto px-4 py-6">
         {/* Header */}
-        <div className="flex items-center mb-8">
-          <Link href="/">
-            <Button
-              variant="outline"
-              size="lg"
-              className="border-2 border-yellow-300 text-yellow-700 hover:bg-yellow-100 bg-transparent"
-            >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              Volver
-            </Button>
-          </Link>
-          <div className="flex-1 flex justify-center">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-800">Mural de Mensajes</h1>
-          </div>
-          <div className="w-[160px] flex justify-end gap-2 items-center">
-            {/* Indicador de conexión mejorado */}
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
-              isConnected() 
-                ? 'bg-green-100 text-green-800 border border-green-200' 
-                : 'bg-red-100 text-red-800 border border-red-200'
-            }`}>
-              <div className={`w-2 h-2 rounded-full ${
-                isConnected() ? 'bg-green-500' : 'bg-red-500'
-              }`} />
-              {isConnected() ? 'En línea' : 'Desconectado'}
-            </div>
-            {messages.length > 0 && (
+        <div className="mb-8 mx-2 sm:mx-0">
+          <div className="flex items-center justify-between gap-2">
+            <Link href="/" className="flex-shrink-0">
               <Button
-                onClick={generatePDF}
-                disabled={isGeneratingPDF}
-                className="bg-pink-500 hover:bg-pink-600 text-white border-2 border-pink-400"
+                variant="outline"
                 size="sm"
+                className="border-2 border-yellow-300 text-yellow-700 hover:bg-yellow-100 bg-transparent text-xs sm:text-sm px-3 sm:px-4 min-w-[60px] sm:min-w-auto"
               >
-                <Download className="w-4 h-4 mr-1" />
-                {isGeneratingPDF ? "..." : "PDF"}
+                <ArrowLeft className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Volver</span>
               </Button>
-            )}
+            </Link>
+            
+            <div className="flex-1 flex justify-center min-w-0 px-2">
+              <h1 className="text-lg sm:text-2xl md:text-4xl font-bold text-gray-800 text-center truncate">Mural de Mensajes</h1>
+            </div>
+            
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              {/* Indicador de conexión compacto */}
+              <div className={`flex items-center gap-1 px-1 sm:px-2 py-1 rounded-full ${
+                isConnected() 
+                  ? 'bg-green-100 border border-green-200' 
+                  : 'bg-red-100 border border-red-200'
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${
+                  isConnected() ? 'bg-green-500' : 'bg-red-500'
+                }`} />
+                <span className={`text-xs font-medium hidden sm:inline ${
+                  isConnected() ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {isConnected() ? 'En línea' : 'Desconectado'}
+                </span>
+              </div>
+              
+              {messages.length > 0 && (
+                <Button
+                  onClick={generatePDF}
+                  disabled={isGeneratingPDF}
+                  variant="outline"
+                  size="sm"
+                  className="border-2 border-pink-300 text-pink-700 hover:bg-pink-100 bg-transparent text-xs sm:text-sm px-2 sm:px-3 min-w-[40px] sm:min-w-auto"
+                >
+                  <Download className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">{isGeneratingPDF ? "..." : "PDF"}</span>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Message Form */}
-        <Card className="mb-8 border-2 border-yellow-200 bg-white/80 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="text-2xl text-center text-gray-800 flex items-center justify-center gap-2">
+        <Card className="mb-8 border-2 border-yellow-200 bg-white/80 backdrop-blur-sm mx-2 sm:mx-0">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl sm:text-2xl text-center text-gray-800 flex flex-col sm:flex-row items-center justify-center gap-2">
               <Heart className="w-6 h-6 text-pink-500" />
-              Escribe un mensaje especial
+              <span className="text-center">Escribe un mensaje especial</span>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+          <CardContent className="px-4 sm:px-6">
+            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
               <div>
                 <Label htmlFor="author" className="text-lg font-medium text-gray-700">
                   Tu nombre
@@ -533,7 +555,7 @@ export default function MuralPage() {
         </Card>
 
         {/* Messages Wall */}
-        {messages.length === 0 ? (
+        {messages.length === 0 && !isLoading ? (
           <Card className="border-2 border-gray-200 bg-white/60">
             <CardContent className="p-12 text-center">
               <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-200 rounded-full mb-6">
@@ -544,38 +566,78 @@ export default function MuralPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {messages.map((message) => (
-              <Card
-                key={message.id}
-                className={`${message.color} border-2 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 relative`}
-              >
-                <CardContent className="p-6 relative">
-                  <Heart className="absolute top-4 right-4 w-5 h-5 text-current opacity-60" />
-                  {isAdmin && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteMessage(message.id)}
-                      className="absolute top-2 right-10 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full p-1"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {messages.map((message) => (
+                <Card
+                  key={message.id}
+                  className={`${message.color} border-2 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 relative`}
+                >
+                  <CardContent className="p-6 relative">
+                    <Heart className="absolute top-4 right-4 w-5 h-5 text-current opacity-60" />
+                    {isAdmin && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteMessage(message.id)}
+                        className="absolute top-2 right-10 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full p-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
 
-                  <div className="pr-8">
-                    <p className="text-lg leading-relaxed mb-4 font-medium">"{message.text}"</p>
+                    <div className="pr-8">
+                      <p className="text-lg leading-relaxed mb-4 font-medium">"{message.text}"</p>
 
-                    <div className="flex items-center justify-between">
-                      <p className="font-semibold text-base">- {message.author}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-base">- {message.author}</p>
+                      </div>
+
+                      <p className="text-sm opacity-75 mt-2">{new Date(message.timestamp).toLocaleString()}</p>
                     </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
 
-                    <p className="text-sm opacity-75 mt-2">{new Date(message.timestamp).toLocaleString()}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+            {/* Indicador de carga más elementos */}
+            {isLoadingMore && (
+              <div className="flex justify-center items-center py-8">
+                <div className="flex items-center gap-3 px-6 py-3 bg-white/80 backdrop-blur-sm rounded-full border border-yellow-200">
+                  <Loader2 className="w-5 h-5 animate-spin text-yellow-600" />
+                  <span className="text-yellow-700 font-medium">Cargando más mensajes...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Mensaje de fin de contenido */}
+            {!hasMore && messages.length > 0 && (
+              <div className="flex justify-center items-center py-8">
+                <div className="px-6 py-3 bg-pink-50 border border-pink-200 rounded-full">
+                  <span className="text-pink-700 font-medium">💕 ¡Has leído todos los mensajes! 💕</span>
+                </div>
+              </div>
+            )}
+
+            {/* Error de carga */}
+            {loadError && (
+              <div className="flex justify-center items-center py-8">
+                <Card className="border-2 border-red-200 bg-red-50">
+                  <CardContent className="p-6 text-center">
+                    <p className="text-red-700 font-medium mb-2">Error al cargar más mensajes</p>
+                    <p className="text-red-600 text-sm mb-4">{loadError}</p>
+                    <Button
+                      onClick={refresh}
+                      variant="outline"
+                      className="border-red-300 text-red-700 hover:bg-red-100"
+                    >
+                      Intentar de nuevo
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -29,6 +29,7 @@ declare global {
       ) => string
       reset: (widgetId: string) => void
     }
+    turnstileLoaded?: boolean
   }
 }
 
@@ -49,43 +50,74 @@ export function Turnstile({
   const { toast } = useToast()
 
   useEffect(() => {
+    // Evitar ejecuciones si ya está cargado
+    if (isLoaded) return
+
     // Verificar si Turnstile ya está cargado
-    if (window.turnstile) {
+    if (window.turnstile || window.turnstileLoaded) {
       setIsLoaded(true)
       setIsLoading(false)
       return
     }
 
-    // Esperar a que se cargue el script
-    const checkTurnstile = () => {
-      if (window.turnstile) {
+    // Buscar si el script ya existe
+    const existingScript = document.querySelector('script[src*="turnstile"]')
+    if (existingScript) {
+      // Si el script existe, esperar a que termine de cargar
+      const handleLoad = () => {
+        if (window.turnstile) {
+          window.turnstileLoaded = true
+          setIsLoaded(true)
+          setIsLoading(false)
+        }
+      }
+
+      if (existingScript.getAttribute('data-loaded') === 'true') {
+        handleLoad()
+      } else {
+        existingScript.addEventListener('load', handleLoad)
+        return () => existingScript.removeEventListener('load', handleLoad)
+      }
+    } else {
+      // Si no existe, crearlo con evento de carga
+      const script = document.createElement('script')
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
+      script.async = true
+      script.defer = true
+      
+      const handleLoad = () => {
+        window.turnstileLoaded = true
         setIsLoaded(true)
         setIsLoading(false)
-      } else {
-        setTimeout(checkTurnstile, 100)
+        script.setAttribute('data-loaded', 'true')
       }
-    }
-    checkTurnstile()
 
-    // Timeout para evitar esperar indefinidamente
-    const timeout = setTimeout(() => {
-      if (!window.turnstile) {
-        const errorMessage = 'No se pudo cargar la verificación de seguridad. Por favor, recarga la página.'
+      const handleError = () => {
+        const errorMessage = 'No se pudo cargar la verificación. Verifica tu conexión a internet.'
         setError(errorMessage)
         setIsLoading(false)
         toast({
-          title: "Error de carga",
+          title: "Error de conexión",
           description: errorMessage,
           variant: "destructive",
         })
       }
-    }, 10000) // 10 segundos de timeout
 
-    return () => clearTimeout(timeout)
-  }, [])
+      script.addEventListener('load', handleLoad)
+      script.addEventListener('error', handleError)
+      
+      document.head.appendChild(script)
+
+      return () => {
+        script.removeEventListener('load', handleLoad)
+        script.removeEventListener('error', handleError)
+      }
+    }
+  }, [isLoaded]) // Agregar isLoaded como dependencia para evitar bucles
 
   useEffect(() => {
-    if (!isLoaded || !containerRef.current || !siteKey || widgetId) return
+    if (!isLoaded || !containerRef.current || !siteKey) return
+    if (widgetId) return // Evitar recrear si ya existe un widget
 
     // Verificar si ya hay un widget en este contenedor
     const existingWidget = containerRef.current.querySelector('[data-turnstile-widget-id]')
@@ -152,13 +184,13 @@ export function Turnstile({
         }
       }
     }
-  }, [isLoaded, siteKey, theme, size, onVerify, onExpire, onError, widgetId])
+  }, [isLoaded, siteKey, theme, size]) // Remover widgetId para evitar bucles
 
   const reset = () => {
     if (widgetId && window.turnstile) {
       window.turnstile.reset(widgetId)
-      setWidgetId(null) // Resetear el widgetId para permitir re-renderizado
       setError(null) // Limpiar errores al resetear
+      // No resetear widgetId para permitir reutilización
     }
   }
 
@@ -174,6 +206,7 @@ export function Turnstile({
     script.async = true
     script.defer = true
     script.onload = () => {
+      window.turnstileLoaded = true
       setIsLoaded(true)
       setIsLoading(false)
     }
@@ -269,7 +302,7 @@ export function useTurnstile() {
       description: errorMessage,
       variant: "destructive",
     })
-  }, [toast])
+  }, []) // toast removido de dependencias
 
   const handleExpire = useCallback(() => {
     setToken(null)
@@ -281,12 +314,13 @@ export function useTurnstile() {
       description: errorMessage,
       variant: "destructive",
     })
-  }, [toast])
+  }, []) // toast removido de dependencias
 
   const reset = useCallback(() => {
+    // Solo resetear token y error, mantener isVerifying para evitar problemas de estado
     setToken(null)
-    setIsVerifying(false)
     setError(null)
+    // No resetear isVerifying aquí para evitar problemas de estado
   }, [])
 
   return {

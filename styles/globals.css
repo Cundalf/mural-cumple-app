@@ -6,6 +6,16 @@
   .text-balance {
     text-wrap: balance;
   }
+  
+  /* Breakpoint xs personalizado para pantallas muy pequeñas */
+  @media (min-width: 475px) {
+    .xs\:inline {
+      display: inline;
+    }
+    .xs\:hidden {
+      display: none;
+    }
+  }
 }
 
 @layer base {

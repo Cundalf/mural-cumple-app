@@ -33,6 +33,9 @@ async function verifyTurnstile(token: string): Promise<boolean> {
   }
 }
 
+// Configurar límite de tamaño para archivos grandes
+export const maxDuration = 300; // 5 minutos para procesar archivos grandes
+
 export async function POST(request: NextRequest) {
   try {
     const data = await request.formData();
@@ -51,6 +54,24 @@ export async function POST(request: NextRequest) {
 
     if (!files || files.length === 0) {
       return NextResponse.json({ error: 'No se encontraron archivos' }, { status: 400 });
+    }
+
+    // Validar tamaño de archivos (100MB máximo)
+    const maxSize = 100 * 1024 * 1024; // 100MB (límite Cloudflare)
+    for (const file of files) {
+      if (file.size > maxSize) {
+        return NextResponse.json({ 
+          error: `El archivo ${file.name} es demasiado grande. Tamaño máximo: 100MB` 
+        }, { status: 413 });
+      }
+      
+      // Validar tipo de archivo
+      const isValidType = file.type.startsWith('image/') || file.type.startsWith('video/');
+      if (!isValidType) {
+        return NextResponse.json({ 
+          error: `El archivo ${file.name} no es válido. Solo se permiten imágenes y videos.` 
+        }, { status: 400 });
+      }
     }
 
     const uploadDir = join(process.cwd(), 'uploads');

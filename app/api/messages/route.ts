@@ -3,11 +3,36 @@ import { messageQueries, Message } from '@/lib/database';
 import { v4 as uuidv4 } from 'uuid';
 import { emitMessageCreated, emitMessageDeleted } from '@/lib/events';
 
-// GET - Obtener todos los mensajes
-export async function GET() {
+// GET - Obtener mensajes con paginación
+export async function GET(request: NextRequest) {
   try {
-    const messages = messageQueries.getAll();
-    return NextResponse.json(messages);
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '30');
+    
+    // Validar parámetros
+    if (page < 1 || limit < 1 || limit > 100) {
+      return NextResponse.json({ error: 'Parámetros de paginación inválidos' }, { status: 400 });
+    }
+
+    const allMessages = messageQueries.getAll();
+    
+    // Calcular offset y obtener página específica
+    const totalItems = allMessages.length;
+    const offset = (page - 1) * limit;
+    const paginatedMessages = allMessages.slice(offset, offset + limit);
+
+    return NextResponse.json({
+      data: paginatedMessages,
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+        hasNextPage: offset + limit < totalItems,
+        hasPreviousPage: page > 1
+      }
+    });
   } catch (error) {
     console.error('Error al obtener mensajes:', error);
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });

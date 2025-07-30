@@ -2,18 +2,42 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mediaQueries, MediaFile } from '@/lib/database';
 import { emitMediaDeleted } from '@/lib/events';
 
-// GET - Obtener todos los archivos multimedia
-export async function GET() {
+// GET - Obtener archivos multimedia con paginación
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '20');
+    
+    // Validar parámetros
+    if (page < 1 || limit < 1 || limit > 100) {
+      return NextResponse.json({ error: 'Parámetros de paginación inválidos' }, { status: 400 });
+    }
+
     const mediaFiles = mediaQueries.getAll();
     
+    // Calcular offset y obtener página específica
+    const totalItems = mediaFiles.length;
+    const offset = (page - 1) * limit;
+    const paginatedFiles = mediaFiles.slice(offset, offset + limit);
+    
     // Agregar la URL completa para cada archivo
-    const mediaWithUrls = mediaFiles.map(file => ({
+    const mediaWithUrls = paginatedFiles.map(file => ({
       ...file,
       url: `/api/media/serve/${file.id}`
     }));
 
-    return NextResponse.json(mediaWithUrls);
+    return NextResponse.json({
+      data: mediaWithUrls,
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+        hasNextPage: offset + limit < totalItems,
+        hasPreviousPage: page > 1
+      }
+    });
   } catch (error) {
     console.error('Error al obtener archivos multimedia:', error);
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 });
