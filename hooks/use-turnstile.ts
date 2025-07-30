@@ -15,7 +15,7 @@ interface UseTurnstileOptions {
 }
 
 interface UseTurnstileReturn {
-  turnstileRef: React.RefObject<TurnstileRef>
+  turnstileRef: React.RefObject<TurnstileRef | null>
   token: string | null
   error: string | null
   isLoading: boolean

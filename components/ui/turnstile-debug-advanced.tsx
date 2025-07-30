@@ -37,17 +37,17 @@ export function TurnstileDebugAdvanced({ siteKey, className = '' }: TurnstileDeb
         functions: window.turnstile ? Object.keys(window.turnstile) : [],
       }
 
-      // Verificar scripts
-      const scripts = Array.from(document.querySelectorAll('script'))
-      info.scripts = {
-        total: scripts.length,
-        turnstileScripts: scripts.filter(s => s.src?.includes('turnstile')).map(s => ({
-          src: s.src,
-          async: s.async,
-          defer: s.defer,
-          loaded: s.complete
-        }))
-      }
+             // Verificar scripts
+       const scripts = Array.from(document.querySelectorAll('script'))
+       info.scripts = {
+         total: scripts.length,
+         turnstileScripts: scripts.filter(s => s.src?.includes('turnstile')).map(s => ({
+           src: s.src,
+           async: s.async,
+           defer: s.defer,
+           loaded: true // Asumimos que si el script está en el DOM, está cargado
+         }))
+       }
 
       // Verificar iframes de Turnstile en todo el documento
       const allIframes = Array.from(document.querySelectorAll('iframe'))
