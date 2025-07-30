@@ -32,9 +32,6 @@ html {
             src="https://challenges.cloudflare.com/turnstile/v0/api.js" 
             async 
             defer
-            onError={(e) => {
-              console.warn('Error cargando script de Turnstile:', e)
-            }}
           />
         )}
         {/* Error handler para scripts externos */}
