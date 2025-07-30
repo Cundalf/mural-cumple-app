@@ -75,10 +75,11 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
     const [widgetId, setWidgetId] = useState<string | null>(null)
     const [isScriptLoaded, setIsScriptLoaded] = useState(false)
     const [isRendering, setIsRendering] = useState(false)
-    const [retryCount, setRetryCount] = useState(0)
-    const [isDestroyed, setIsDestroyed] = useState(false)
-    const scriptTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-    const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+      const [retryCount, setRetryCount] = useState(0)
+  const [isDestroyed, setIsDestroyed] = useState(false)
+  const [isResetting, setIsResetting] = useState(false) // Nuevo estado para evitar resets simultáneos
+  const scriptTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     
     // Resetear isDestroyed cuando el componente se monta
     useEffect(() => {
@@ -121,37 +122,70 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
       setIsRendering(false)
     }, [widgetId])
 
+    const forceRetry = useCallback(() => {
+      if (isResetting) {
+        console.log('⚠️ Reset ya en progreso, ignorando retry automático')
+        return
+      }
+      
+      console.log('🔄 Forzando recreación del widget...')
+      setIsResetting(true)
+      
+      destroyWidget()
+      setIsRendering(false)
+      
+      // Recrear después de un delay
+      setTimeout(() => {
+        if (!isDestroyed) {
+          setIsRendering(false) // Permitir recreación
+          setIsResetting(false) // Permitir futuros resets
+        }
+      }, 1000)
+    }, [destroyWidget, isDestroyed, isResetting])
+
     const handleError = useCallback((error: string, shouldRetry = true) => {
       console.error('Turnstile error:', error)
       
+      if (isResetting) {
+        console.log('⚠️ Reset en progreso, ignorando error')
+        return
+      }
+      
       if (shouldRetry && retryCount < maxRetries && !isDestroyed) {
-        setRetryCount(prev => prev + 1)
+        const newRetryCount = retryCount + 1
+        setRetryCount(newRetryCount)
         
+        onError?.(`Error en la verificación. Reintentando... (${newRetryCount}/${maxRetries})`)
+        
+        // Programar reintento solo si no hay reset en progreso
         retryTimeoutRef.current = setTimeout(() => {
-          if (!isDestroyed) {
-            destroyWidget()
-            setIsRendering(false)
+          if (!isResetting) {
+            forceRetry()
           }
-        }, RETRY_DELAY)
-        
-        onError?.(`Error en la verificación. Reintentando... (${retryCount + 1}/${maxRetries})`)
+        }, 2000)
       } else {
+        // Si ya no hay más reintentos, resetear completamente
+        console.log('🚫 Máximo de reintentos alcanzado')
+        setRetryCount(0)
+        destroyWidget()
+        setIsRendering(false)
+        setIsResetting(false)
         onError?.(error)
       }
-    }, [retryCount, maxRetries, isDestroyed, destroyWidget, onError])
+    }, [retryCount, maxRetries, isDestroyed, onError, forceRetry, isResetting])
 
-    const renderWidget = useCallback(() => {
-      if (!isScriptLoaded || !containerRef.current || !siteKey || isRendering || isDestroyed) {
+    // Función de renderizado estable sin useCallback para evitar problemas de dependencias
+    const renderWidget = () => {
+      if (!isScriptLoaded || !containerRef.current || !siteKey || isRendering || isDestroyed || isResetting) {
         return
       }
 
       if (!window.turnstile) {
-
+        console.warn('Turnstile script no disponible')
         return
       }
 
       setIsRendering(true)
-
 
       try {
         const id = window.turnstile.render(containerRef.current, {
@@ -159,7 +193,7 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
           theme,
           size,
           callback: (token: string) => {
-    
+            console.log('✅ Token recibido exitosamente')
             setRetryCount(0)
             onVerify(token)
           },
@@ -191,6 +225,9 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
                   break
                 case '110007':
                   errorMessage = 'Token de verificación expirado.'
+                  break
+                case '300030':
+                  errorMessage = 'Tiempo de espera agotado en la verificación.'
                   break
                 default:
                   errorMessage = `Error de verificación (${errorCode})`
@@ -236,7 +273,7 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
         console.error('❌ Error al renderizar Turnstile:', error)
         handleError('No se pudo cargar la verificación. Recarga la página.', false)
       }
-    }, [isScriptLoaded, siteKey, theme, size, onVerify, onExpire, handleError])
+    }
 
     // Cargar script de Turnstile (solo una vez globalmente)
     useEffect(() => {
@@ -311,75 +348,10 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
 
     // Renderizar widget cuando el script esté listo
     useEffect(() => {
-      if (isScriptLoaded && !widgetId && !isRendering && !isDestroyed && containerRef.current && siteKey) {
-        // Renderizar inline para evitar dependencias circulares
-        if (!window.turnstile) {
-  
-          return
-        }
-
-        setIsRendering(true)
-
-        try {
-          const id = window.turnstile.render(containerRef.current, {
-            sitekey: siteKey,
-            theme,
-            size,
-            callback: (token: string) => {
-    
-              setRetryCount(0)
-              onVerify(token)
-            },
-            'error-callback': (errorCode: string) => {
-              let errorMessage = 'Error en la verificación. Inténtalo de nuevo.'
-              
-              switch (errorCode) {
-                case '110000':
-                  errorMessage = 'Token de verificación inválido o expirado.'
-                  break
-                case '110001':
-                  errorMessage = 'Token de verificación ya usado.'
-                  break
-                case '110002':
-                  errorMessage = 'Dominio no autorizado.'
-                  break
-                case '110003':
-                  errorMessage = 'Clave de sitio inválida.'
-                  break
-                default:
-                  errorMessage = `Error de verificación (${errorCode})`
-              }
-
-              handleError(errorMessage, autoResetOnError)
-          },
-          'expired-callback': () => {
-            onExpire?.()
-              if (autoResetOnError) {
-                setTimeout(() => {
-                  if (widgetId && window.turnstile) {
-                    try {
-                      window.turnstile.reset(widgetId)
-                    } catch (error) {
-                      console.warn('Error al resetear widget expirado:', error)
-                    }
-                  }
-                }, 100)
-              }
-            }
-          })
-          
-        setWidgetId(id)
-          setIsRendering(false)
-
-          
-
-      } catch (error) {
-          setIsRendering(false)
-          console.error('❌ Error al renderizar Turnstile:', error)
-          handleError('No se pudo cargar la verificación. Recarga la página.', false)
-        }
+      if (isScriptLoaded && !widgetId && !isRendering && !isDestroyed && !isResetting && containerRef.current && siteKey) {
+        renderWidget()
       }
-    }, [isScriptLoaded, widgetId, isRendering, isDestroyed, siteKey, theme, size, onVerify, onExpire, handleError, autoResetOnError])
+    }, [isScriptLoaded, widgetId, isRendering, isDestroyed, isResetting, siteKey]) // Remover renderWidget para estabilizar
 
     // Cleanup al desmontar (solo al desmontar realmente)
     useEffect(() => {
@@ -406,14 +378,41 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
 
     useImperativeHandle(ref, () => ({
       reset: () => {
-        if (!widgetId || !window.turnstile || isDestroyed) return
+        if (isDestroyed || isResetting) {
+          console.log('⚠️ Reset ignorado - Widget destruido o reset en progreso')
+          return
+        }
         
-          try {
-            window.turnstile.reset(widgetId)
-          setRetryCount(0)
-        } catch (error) {
-          console.error('Error al resetear Turnstile:', error)
+        console.log('🔄 Reset manual solicitado')
+        setIsResetting(true)
+        
+        // Cancelar cualquier timeout pendiente
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current)
+          retryTimeoutRef.current = undefined
+        }
+        
+        try {
+          // Destruir widget completamente
           destroyWidget()
+          
+          // Limpiar estados
+          setRetryCount(0)
+          setIsRendering(false)
+          
+          console.log('✅ Reset manual completado')
+          
+          // Permitir recreación después de un delay
+          setTimeout(() => {
+            if (!isDestroyed) {
+              setIsResetting(false)
+              setIsRendering(false) // Esto debería triggear recreación
+            }
+          }, 1500)
+          
+        } catch (error) {
+          console.error('❌ Error en reset manual:', error)
+          setIsResetting(false)
         }
       },
       execute: () => {

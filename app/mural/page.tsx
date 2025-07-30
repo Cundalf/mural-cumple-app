@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -74,7 +74,7 @@ export default function MuralPage() {
     setItems: setMessages
   } = useInfiniteScroll<Message>({
     apiEndpoint: '/api/messages',
-    limit: 30,
+    limit: 20, // Unificado con la galería
     onError: (error) => {
       console.error('Error al cargar mensajes:', error)
       toast({
@@ -86,7 +86,16 @@ export default function MuralPage() {
   })
 
   const handleMessageCreated = useCallback((message: Message) => {
-    setMessages(prev => [message, ...prev]);
+    setMessages(prev => {
+      // Verificar duplicados de forma simple
+      const existingIndex = prev.findIndex(msg => msg.id === message.id);
+      if (existingIndex >= 0) {
+        return prev; // No cambiar nada si ya existe
+      }
+      
+      // Agregar nuevo mensaje al inicio
+      return [message, ...prev];
+    });
   }, [setMessages]);
 
   const handleMessageDeleted = useCallback((data: { id: string }) => {
@@ -94,7 +103,8 @@ export default function MuralPage() {
   }, [setMessages]);
 
   const handleConnected = useCallback(() => {
-    refresh()
+    // Hacer refresh para sincronizar estado inicial
+    refresh();
   }, [refresh]);
 
   const { disconnect, reconnect, isConnected } = useRealtime({
@@ -102,6 +112,19 @@ export default function MuralPage() {
     onMessageDeleted: handleMessageDeleted,
     onConnected: handleConnected
   });
+
+  // Limpiar duplicados SOLO para renderizado, manteniendo la paginación
+  const cleanMessages = useMemo(() => {
+    // Solo limpiar duplicados sin afectar la paginación
+    const seen = new Set<string>();
+    return messages.filter(message => {
+      if (seen.has(message.id)) {
+        return false; // Omitir duplicado
+      }
+      seen.add(message.id);
+      return true; // Mantener único
+    });
+  }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -188,7 +211,7 @@ export default function MuralPage() {
   }
 
   const generatePDF = async () => {
-    if (messages.length === 0) return
+    if (cleanMessages.length === 0) return
 
     setIsGeneratingPDF(true)
 
@@ -473,7 +496,7 @@ export default function MuralPage() {
                 </span>
               </div>
               
-              {messages.length > 0 && (
+              {cleanMessages.length > 0 && (
                 <Button
                   onClick={generatePDF}
                   disabled={isGeneratingPDF}
@@ -569,7 +592,7 @@ export default function MuralPage() {
           </CardContent>
         </Card>
 
-        {messages.length === 0 && !isLoading ? (
+        {cleanMessages.length === 0 && !isLoading ? (
           <Card className="border-2 border-gray-200 bg-white/60">
             <CardContent className="p-12 text-center">
               <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-200 rounded-full mb-6">
@@ -582,7 +605,7 @@ export default function MuralPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {messages.map((message) => (
+              {cleanMessages.map((message) => (
                 <Card
                   key={message.id}
                   className={`${message.color} border-2 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 relative`}
@@ -623,7 +646,7 @@ export default function MuralPage() {
               </div>
             )}
 
-            {!hasMore && messages.length > 0 && (
+            {!hasMore && cleanMessages.length > 0 && (
               <div className="flex justify-center items-center py-8">
                 <div className="px-6 py-3 bg-pink-50 border border-pink-200 rounded-full">
                   <span className="text-pink-700 font-medium">💕 ¡Has leído todos los mensajes! 💕</span>

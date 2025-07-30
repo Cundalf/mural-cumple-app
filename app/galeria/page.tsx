@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -67,10 +67,13 @@ export default function GaleriaPage() {
 
   const handleMediaUploaded = useCallback((media: MediaItem) => {
     setMediaItems(prev => {
-      const exists = prev.some(item => item.id === media.id);
-      if (exists) {
-        return prev;
+      // Verificar duplicados de forma simple
+      const existingIndex = prev.findIndex(item => item.id === media.id);
+      if (existingIndex >= 0) {
+        return prev; // No cambiar nada si ya existe
       }
+      
+      // Agregar nueva media al inicio
       return [media, ...prev];
     });
   }, [setMediaItems]);
@@ -81,7 +84,8 @@ export default function GaleriaPage() {
   }, [setMediaItems]);
 
   const handleConnected = useCallback(() => {
-    refresh()
+    // Hacer refresh para sincronizar estado inicial
+    refresh();
   }, [refresh]);
 
   const { disconnect, reconnect, isConnected } = useRealtime({
@@ -89,6 +93,19 @@ export default function GaleriaPage() {
     onMediaDeleted: handleMediaDeleted,
     onConnected: handleConnected
   });
+
+  // Limpiar duplicados antes de renderizar (sin modificar estado)
+  const cleanMediaItems = useMemo(() => {
+    const uniqueItems = mediaItems.reduce((acc: MediaItem[], item) => {
+      const exists = acc.find(existing => existing.id === item.id);
+      if (!exists) {
+        acc.push(item);
+      }
+      return acc;
+    }, []);
+    
+    return uniqueItems;
+  }, [mediaItems]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
@@ -309,9 +326,37 @@ export default function GaleriaPage() {
               
               {turnstile.error && (
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <span className="text-red-600">⚠️</span>
-                    <span className="text-sm text-red-700">{turnstile.error}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-red-600">⚠️</span>
+                      <span className="text-sm text-red-700">{turnstile.error}</span>
+                    </div>
+                    {(turnstile.error.includes('Reintentando') || turnstile.error.includes('Error')) && (
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => {
+                            console.log('🔄 Usuario presionó Reiniciar')
+                            turnstile.reset()
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs border-red-300 text-red-700 hover:bg-red-100 font-medium"
+                        >
+                          🔄 Reiniciar
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            console.log('🔄 Recargando página como fallback')
+                            window.location.reload()
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs border-gray-300 text-gray-700 hover:bg-gray-100"
+                        >
+                          ↻ Recargar
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -319,7 +364,7 @@ export default function GaleriaPage() {
           </CardContent>
         </Card>
 
-        {mediaItems.length === 0 && !isLoading ? (
+        {cleanMediaItems.length === 0 && !isLoading ? (
           <Card className="border-2 border-gray-200 bg-white/60">
             <CardContent className="p-12 text-center">
               <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-200 rounded-full mb-6">
@@ -332,7 +377,7 @@ export default function GaleriaPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {mediaItems.map((item) => (
+              {cleanMediaItems.map((item) => (
                 <Dialog key={item.id}>
                   <DialogTrigger asChild>
                     <Card className="cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-pink-200 hover:border-pink-300 group overflow-hidden relative">
@@ -423,7 +468,7 @@ export default function GaleriaPage() {
               </div>
             )}
 
-            {!hasMore && mediaItems.length > 0 && (
+            {!hasMore && cleanMediaItems.length > 0 && (
               <div className="flex justify-center items-center py-8">
                 <div className="px-6 py-3 bg-green-50 border border-green-200 rounded-full">
                   <span className="text-green-700 font-medium">✨ ¡Has visto todos los recuerdos! ✨</span>

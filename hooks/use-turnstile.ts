@@ -123,18 +123,28 @@ export function useTurnstile({
   }, [clearTokenExpiry, toast])
 
   const reset = useCallback(() => {
+    console.log('🔄 Reset completo de Turnstile iniciado')
+    
+    // Limpiar estado del hook
     setToken(null)
     setTokenTimestamp(null)
     setError(null)
     setIsLoading(false)
     clearTokenExpiry()
     
+    // Resetear el widget
     if (turnstileRef.current) {
       try {
         turnstileRef.current.reset()
+        console.log('✅ Reset del hook completado')
+        
       } catch (error) {
-        console.warn('Error al resetear Turnstile:', error)
+        console.warn('⚠️ Error al resetear widget desde hook:', error)
+        setError('Error al reiniciar verificación. Usa el botón "Recargar" si persiste.')
       }
+    } else {
+      console.warn('⚠️ No hay referencia al widget para resetear')
+      setError('Widget no disponible. Usa el botón "Recargar".')
     }
   }, [clearTokenExpiry])
 
