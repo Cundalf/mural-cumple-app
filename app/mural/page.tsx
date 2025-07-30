@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -12,9 +12,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ArrowLeft, Heart, Send, Trash2, Download, Loader2 } from "lucide-react"
 import { useRealtime } from "@/hooks/use-realtime"
-import { Turnstile, useTurnstile } from "@/components/ui/turnstile"
+import { Turnstile, type TurnstileRef } from "@/components/ui/turnstile"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
 import { useToast } from "@/hooks/use-toast"
+import { useTurnstile } from "@/hooks/use-turnstile"
 
 interface Message {
   id: string
@@ -44,6 +45,7 @@ const colors = [
 ]
 
 export default function MuralPage() {
+  const siteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''
   const [newMessage, setNewMessage] = useState("")
   const [authorName, setAuthorName] = useState("")
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
@@ -52,10 +54,16 @@ export default function MuralPage() {
   const isAdmin = searchParams.get("admin") === "true"
   const { toast } = useToast()
   
-  // Turnstile hook para protección contra bots
-  const { token: turnstileToken, error: turnstileError, handleVerify, handleError, handleExpire, reset, isDisabled: isTurnstileDisabled } = useTurnstile()
+  const isTurnstileDisabled = process.env.NEXT_PUBLIC_DISABLE_TURNSTILE === 'true'
+  
+  const turnstile = useTurnstile({
+    siteKey,
+    disabled: isTurnstileDisabled,
+    reuseTokenDuration: 5 * 60 * 1000, // 5 minutos para mensajes
+    autoResetOnError: true,
+    maxRetries: 3
+  })
 
-  // Hook de scroll infinito para cargar mensajes
   const {
     items: messages,
     isLoading,
@@ -77,7 +85,6 @@ export default function MuralPage() {
     }
   })
 
-  // Handlers estables para eventos en tiempo real
   const handleMessageCreated = useCallback((message: Message) => {
     setMessages(prev => [message, ...prev]);
   }, [setMessages]);
@@ -87,11 +94,9 @@ export default function MuralPage() {
   }, [setMessages]);
 
   const handleConnected = useCallback(() => {
-    // Conexión establecida - refrescar datos
     refresh()
   }, [refresh]);
 
-  // Configurar tiempo real con handlers estables
   const { disconnect, reconnect, isConnected } = useRealtime({
     onMessageCreated: handleMessageCreated,
     onMessageDeleted: handleMessageDeleted,
@@ -101,7 +106,6 @@ export default function MuralPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validaciones básicas
     if (!newMessage.trim() || !authorName.trim()) {
       return
     }
@@ -110,9 +114,16 @@ export default function MuralPage() {
       return
     }
     
-    // Verificar que Turnstile haya sido completado (solo si no está deshabilitado)
-    if (!isTurnstileDisabled && !turnstileToken) {
-      return
+    // Obtener token válido (reutilizable si aún es válido)
+    const token = isTurnstileDisabled ? null : turnstile.getToken()
+    
+    if (!isTurnstileDisabled && !token) {
+        toast({
+            title: "Verificación requerida",
+            description: "Por favor, completa la verificación para continuar.",
+            variant: "destructive",
+        })
+        return
     }
 
     setIsSubmitting(true)
@@ -129,29 +140,36 @@ export default function MuralPage() {
           text: newMessage.trim(),
           author: authorName.trim(),
           color,
-          turnstileToken, // Incluir el token de Turnstile
+          turnstileToken: token,
         }),
       })
 
       if (response.ok) {
-        // El mensaje se agregará automáticamente via eventos en tiempo real
         setNewMessage("")
         setAuthorName("")
-        // Solo resetear Turnstile si no está deshabilitado
-        if (!isTurnstileDisabled) {
-          reset() // Resetear Turnstile para el siguiente envío
-        }
+        
+        // No resetear inmediatamente para permitir reutilizar el token
+        // El token se reutilizará automáticamente durante su período de validez
+        
+        toast({
+            title: "¡Mensaje enviado!",
+            description: "Gracias por dejar tu recuerdo en el mural.",
+        })
       } else {
         const errorData = await response.json()
         throw new Error(errorData.message || 'Error al enviar mensaje')
       }
     } catch (error) {
+        toast({
+            title: "Error al enviar",
+            description: "Hubo un problema al enviar tu mensaje. Intenta de nuevo.",
+            variant: "destructive",
+        })
       console.error('Error al enviar mensaje:', error)
     } finally {
-      // Asegurarse de que siempre se resetee el estado de envío
       setTimeout(() => {
         setIsSubmitting(false)
-      }, 100) // Pequeño delay para evitar doble clicks
+      }, 100)
     }
   }
 
@@ -162,7 +180,7 @@ export default function MuralPage() {
       })
 
       if (response.ok) {
-        // El mensaje se eliminará automáticamente via eventos en tiempo real
+        // message deleted via realtime
       }
     } catch (error) {
       console.error('Error al eliminar mensaje:', error)
@@ -175,11 +193,9 @@ export default function MuralPage() {
     setIsGeneratingPDF(true)
 
     try {
-      // Crear una nueva ventana para el PDF
       const printWindow = window.open("", "_blank")
       if (!printWindow) return
 
-      // Generar el HTML para el PDF
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -397,7 +413,6 @@ export default function MuralPage() {
       printWindow.document.write(htmlContent)
       printWindow.document.close()
 
-      // Esperar a que se cargue el contenido
       printWindow.onload = () => {
         setTimeout(() => {
           printWindow.print()
@@ -425,7 +440,6 @@ export default function MuralPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-pink-50 to-blue-50">
       <div className="container mx-auto px-4 py-6">
-        {/* Header */}
         <div className="mb-8 mx-2 sm:mx-0">
           <div className="flex items-center justify-between gap-2">
             <Link href="/" className="flex-shrink-0">
@@ -444,7 +458,6 @@ export default function MuralPage() {
             </div>
             
             <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-              {/* Indicador de conexión compacto */}
               <div className={`flex items-center gap-1 px-1 sm:px-2 py-1 rounded-full ${
                 isConnected() 
                   ? 'bg-green-100 border border-green-200' 
@@ -476,7 +489,6 @@ export default function MuralPage() {
           </div>
         </div>
 
-        {/* Message Form */}
         <Card className="mb-8 border-2 border-yellow-200 bg-white/80 backdrop-blur-sm mx-2 sm:mx-0">
           <CardHeader className="pb-4">
             <CardTitle className="text-xl sm:text-2xl text-center text-gray-800 flex flex-col sm:flex-row items-center justify-center gap-2">
@@ -518,25 +530,28 @@ export default function MuralPage() {
                 <p className="text-sm text-gray-500 mt-2">{newMessage.length}/200 caracteres</p>
               </div>
 
-              {/* Turnstile para protección contra bots */}
-              <div className="flex justify-center">
-                <Turnstile
-                  siteKey={process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''}
-                  onVerify={handleVerify}
-                  onError={handleError}
-                  onExpire={handleExpire}
-                  theme="light"
-                  size="normal"
-                  className="mt-4"
-                />
-              </div>
+              {!isTurnstileDisabled && (
+                <div className="flex justify-center">
+                  <Turnstile
+                    ref={turnstile.turnstileRef}
+                    siteKey={siteKey}
+                    onVerify={turnstile.handleVerify}
+                    onError={turnstile.handleError}
+                    onExpire={turnstile.handleExpire}
+                    theme="light"
+                    size="normal"
+                    autoResetOnError={true}
+                    maxRetries={3}
+                    className="mt-4"
+                  />
+                </div>
+              )}
               
-              {/* Mostrar error de Turnstile si existe */}
-              {turnstileError && (
+              {turnstile.error && (
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                   <div className="flex items-center gap-2">
                     <span className="text-red-600">⚠️</span>
-                    <span className="text-sm text-red-700">{turnstileError}</span>
+                    <span className="text-sm text-red-700">{turnstile.error}</span>
                   </div>
                 </div>
               )}
@@ -545,7 +560,7 @@ export default function MuralPage() {
                 type="submit"
                 size="lg"
                 className="w-full bg-yellow-500 hover:bg-yellow-600 text-white py-4 text-lg rounded-full"
-                disabled={!newMessage.trim() || !authorName.trim() || (!isTurnstileDisabled && !turnstileToken) || isSubmitting}
+                disabled={!newMessage.trim() || !authorName.trim() || (!isTurnstileDisabled && !turnstile.isTokenValid) || isSubmitting}
               >
                 <Send className="w-5 h-5 mr-2" />
                 {isSubmitting ? "Enviando..." : "Enviar Mensaje"}
@@ -554,7 +569,6 @@ export default function MuralPage() {
           </CardContent>
         </Card>
 
-        {/* Messages Wall */}
         {messages.length === 0 && !isLoading ? (
           <Card className="border-2 border-gray-200 bg-white/60">
             <CardContent className="p-12 text-center">
@@ -600,7 +614,6 @@ export default function MuralPage() {
               ))}
             </div>
 
-            {/* Indicador de carga más elementos */}
             {isLoadingMore && (
               <div className="flex justify-center items-center py-8">
                 <div className="flex items-center gap-3 px-6 py-3 bg-white/80 backdrop-blur-sm rounded-full border border-yellow-200">
@@ -610,7 +623,6 @@ export default function MuralPage() {
               </div>
             )}
 
-            {/* Mensaje de fin de contenido */}
             {!hasMore && messages.length > 0 && (
               <div className="flex justify-center items-center py-8">
                 <div className="px-6 py-3 bg-pink-50 border border-pink-200 rounded-full">
@@ -619,7 +631,6 @@ export default function MuralPage() {
               </div>
             )}
 
-            {/* Error de carga */}
             {loadError && (
               <div className="flex justify-center items-center py-8">
                 <Card className="border-2 border-red-200 bg-red-50">

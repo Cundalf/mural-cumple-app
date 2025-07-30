@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input"
 import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2, Loader2 } from "lucide-react"
 import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "@/components/ui/dialog"
 import { useRealtime } from "@/hooks/use-realtime"
-import { Turnstile, useTurnstile } from "@/components/ui/turnstile"
+import { Turnstile, type TurnstileRef } from "@/components/ui/turnstile"
 import { useToast } from "@/hooks/use-toast"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
+import { useTurnstile } from "@/hooks/use-turnstile"
 
 interface MediaItem {
   id: string
@@ -24,16 +25,25 @@ interface MediaItem {
 }
 
 export default function GaleriaPage() {
+  const siteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
   const { toast } = useToast()
   
-  // Turnstile hook para protección contra bots
-  const { token: turnstileToken, error: turnstileError, handleVerify, handleError, handleExpire, reset, isDisabled: isTurnstileDisabled } = useTurnstile()
+  const isTurnstileDisabled = process.env.NEXT_PUBLIC_DISABLE_TURNSTILE === 'true'
+  
+  const turnstile = useTurnstile({
+    siteKey,
+    disabled: isTurnstileDisabled,
+    reuseTokenDuration: 10 * 60 * 1000, // 10 minutos para uploads
+    autoResetOnError: true,
+    maxRetries: 3
+  })
+  
 
-  // Hook de scroll infinito para cargar media
+
   const {
     items: mediaItems,
     isLoading,
@@ -55,13 +65,11 @@ export default function GaleriaPage() {
     }
   })
 
-  // Handlers estables para eventos en tiempo real
   const handleMediaUploaded = useCallback((media: MediaItem) => {
     setMediaItems(prev => {
-      // Verificar si ya existe antes de agregar
       const exists = prev.some(item => item.id === media.id);
       if (exists) {
-        return prev; // No agregar si ya existe
+        return prev;
       }
       return [media, ...prev];
     });
@@ -73,11 +81,9 @@ export default function GaleriaPage() {
   }, [setMediaItems]);
 
   const handleConnected = useCallback(() => {
-    // Conexión establecida - refrescar datos
     refresh()
   }, [refresh]);
 
-  // Configurar tiempo real con handlers estables
   const { disconnect, reconnect, isConnected } = useRealtime({
     onMediaUploaded: handleMediaUploaded,
     onMediaDeleted: handleMediaDeleted,
@@ -88,20 +94,25 @@ export default function GaleriaPage() {
     const files = event.target.files
     if (!files || files.length === 0) return
 
-    // Prevenir subida múltiple
     if (isUploading) {
       event.target.value = ""
       return
     }
 
-    // Verificar que Turnstile haya sido completado (solo si no está deshabilitado)
-    if (!isTurnstileDisabled && !turnstileToken) {
-      event.target.value = ""
-      return
+    // Obtener token válido (reutilizable si aún es válido)
+    const token = isTurnstileDisabled ? null : turnstile.getToken()
+    
+    if (!isTurnstileDisabled && !token) {
+        toast({
+            title: "Verificación requerida",
+            description: "Por favor, completa la verificación para poder subir archivos.",
+            variant: "destructive",
+        })
+        event.target.value = ""
+        return
     }
 
-    // Validar tamaño y tipo de archivos
-    const maxSize = 100 * 1024 * 1024 // 100MB (límite de Cloudflare)
+    const maxSize = 100 * 1024 * 1024 // 100MB
     const allowedTypes = ['image/', 'video/']
     
     for (let file of Array.from(files)) {
@@ -131,13 +142,13 @@ export default function GaleriaPage() {
     try {
       const formData = new FormData()
       
-      // Agregar todos los archivos al FormData
       for (let i = 0; i < files.length; i++) {
         formData.append('files', files[i])
       }
 
-      // Agregar el token de Turnstile
-      formData.append('turnstileToken', turnstileToken)
+      if (token) {
+        formData.append('turnstileToken', token)
+      }
 
       const response = await fetch('/api/media/upload', {
         method: 'POST',
@@ -149,13 +160,9 @@ export default function GaleriaPage() {
         throw new Error(errorData.message || 'Error al subir archivos')
       }
 
-      // Los archivos se agregarán automáticamente via eventos en tiempo real
-      // Solo resetear Turnstile si no está deshabilitado
-      if (!isTurnstileDisabled) {
-        reset() // Resetear Turnstile para el siguiente envío
-      }
+      // No resetear inmediatamente para permitir reutilización del token
+      // El token se reutilizará automáticamente durante su período de validez
       
-      // Mostrar mensaje de éxito con toast
       toast({
         title: "¡Archivos subidos!",
         description: `${files.length} archivo(s) subido(s) exitosamente`,
@@ -169,10 +176,9 @@ export default function GaleriaPage() {
         variant: "destructive",
       })
     } finally {
-      // Asegurarse de que siempre se resetee el estado
       setTimeout(() => {
         setIsUploading(false)
-      }, 100) // Pequeño delay para evitar problemas de UI
+      }, 100)
       event.target.value = ""
     }
   }
@@ -189,25 +195,8 @@ export default function GaleriaPage() {
         throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
 
-      // El archivo se eliminará automáticamente via eventos en tiempo real
-      // Pero si por alguna razón el evento no llega, hacemos fallback local después de 2 segundos
-      setTimeout(() => {
-        setMediaItems(prev => {
-          const stillExists = prev.some(item => item.id === id);
-          if (stillExists) {
-            // Si aún existe después de 2 segundos, lo eliminamos localmente
-            return prev.filter(item => item.id !== id);
-          }
-          return prev;
-        });
-        
-        // También cerrar modal si está abierto
-        setSelectedMedia(prev => prev?.id === id ? null : prev);
-      }, 2000);
-      
     } catch (error) {
       console.error('Error al eliminar archivo:', error);
-      // Mostrar error al usuario (opcional)
       alert('Error al eliminar el archivo. Por favor intenta de nuevo.');
     }
   }
@@ -226,7 +215,6 @@ export default function GaleriaPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-pink-50 to-purple-50">
       <div className="container mx-auto px-4 py-6">
-        {/* Header */}
         <div className="mb-8 mx-2 sm:mx-0">
           <div className="flex items-center justify-between gap-2">
             <Link href="/" className="flex-shrink-0">
@@ -245,7 +233,6 @@ export default function GaleriaPage() {
             </div>
             
             <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-              {/* Indicador de conexión compacto */}
               <div className={`flex items-center gap-1 px-1 sm:px-2 py-1 rounded-full ${
                 isConnected() 
                   ? 'bg-green-100 border border-green-200' 
@@ -264,7 +251,6 @@ export default function GaleriaPage() {
           </div>
         </div>
 
-        {/* Upload Section */}
         <Card className="mb-8 border-2 border-blue-200 bg-white/80 backdrop-blur-sm mx-2 sm:mx-0">
           <CardContent className="p-4 sm:p-6">
             <div className="text-center">
@@ -280,49 +266,52 @@ export default function GaleriaPage() {
                   accept="image/*,video/*"
                   onChange={handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  disabled={isUploading || (!isTurnstileDisabled && !turnstileToken)}
+                  disabled={isUploading || (!isTurnstileDisabled && !turnstile.isTokenValid)}
                 />
                 <div className={`border-2 border-dashed rounded-lg p-8 transition-colors ${
-                  isTurnstileDisabled || turnstileToken 
+                  isTurnstileDisabled || turnstile.isTokenValid 
                     ? 'border-blue-300 hover:border-blue-400 bg-blue-50/50 hover:bg-blue-100/50' 
                     : 'border-gray-300 bg-gray-50/50'
                 }`}>
                   <div className="flex flex-col items-center">
                     <Upload className={`w-12 h-12 mb-4 ${
-                      isTurnstileDisabled || turnstileToken ? 'text-blue-500' : 'text-gray-400'
+                      isTurnstileDisabled || turnstile.isTokenValid ? 'text-blue-500' : 'text-gray-400'
                     }`} />
                     <p className={`text-xl font-semibold mb-2 ${
-                      isTurnstileDisabled || turnstileToken ? 'text-blue-700' : 'text-gray-500'
+                      isTurnstileDisabled || turnstile.isTokenValid ? 'text-blue-700' : 'text-gray-500'
                     }`}>
                       {isUploading ? "Subiendo archivos..." : 
                        isTurnstileDisabled ? "Toca aquí para seleccionar" :
-                       turnstileToken ? "Toca aquí para seleccionar" : "Completa la verificación primero"}
+                       turnstile.isTokenValid ? "Toca aquí para seleccionar" : "Completa la verificación primero"}
                     </p>
                     <p className={`text-lg ${
-                      isTurnstileDisabled || turnstileToken ? 'text-blue-600' : 'text-gray-400'
+                      isTurnstileDisabled || turnstile.isTokenValid ? 'text-blue-600' : 'text-gray-400'
                     }`}>Fotos y videos</p>
                   </div>
                 </div>
               </div>
               
-              {/* Turnstile para protección contra bots */}
-              <div className="flex justify-center mt-6">
-                <Turnstile
-                  siteKey={process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''}
-                  onVerify={handleVerify}
-                  onError={handleError}
-                  onExpire={handleExpire}
-                  theme="light"
-                  size="normal"
-                />
-              </div>
+              {!isTurnstileDisabled && (
+                  <div className="flex justify-center mt-6">
+                    <Turnstile
+                        ref={turnstile.turnstileRef}
+                        siteKey={siteKey}
+                        onVerify={turnstile.handleVerify}
+                        onError={turnstile.handleError}
+                        onExpire={turnstile.handleExpire}
+                        theme="light"
+                        size="normal"
+                        autoResetOnError={true}
+                        maxRetries={3}
+                    />
+                  </div>
+              )}
               
-              {/* Mostrar error de Turnstile si existe */}
-              {turnstileError && (
+              {turnstile.error && (
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                   <div className="flex items-center gap-2">
                     <span className="text-red-600">⚠️</span>
-                    <span className="text-sm text-red-700">{turnstileError}</span>
+                    <span className="text-sm text-red-700">{turnstile.error}</span>
                   </div>
                 </div>
               )}
@@ -330,7 +319,6 @@ export default function GaleriaPage() {
           </CardContent>
         </Card>
 
-        {/* Media Grid */}
         {mediaItems.length === 0 && !isLoading ? (
           <Card className="border-2 border-gray-200 bg-white/60">
             <CardContent className="p-12 text-center">
@@ -426,7 +414,6 @@ export default function GaleriaPage() {
               ))}
             </div>
 
-            {/* Indicador de carga más elementos */}
             {isLoadingMore && (
               <div className="flex justify-center items-center py-8">
                 <div className="flex items-center gap-3 px-6 py-3 bg-white/80 backdrop-blur-sm rounded-full border border-blue-200">
@@ -436,7 +423,6 @@ export default function GaleriaPage() {
               </div>
             )}
 
-            {/* Mensaje de fin de contenido */}
             {!hasMore && mediaItems.length > 0 && (
               <div className="flex justify-center items-center py-8">
                 <div className="px-6 py-3 bg-green-50 border border-green-200 rounded-full">
@@ -445,7 +431,6 @@ export default function GaleriaPage() {
               </div>
             )}
 
-            {/* Error de carga */}
             {loadError && (
               <div className="flex justify-center items-center py-8">
                 <Card className="border-2 border-red-200 bg-red-50">

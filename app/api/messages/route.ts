@@ -75,8 +75,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Faltan campos requeridos' }, { status: 400 });
     }
 
-    // Validar token de Turnstile si está presente
-    if (turnstileToken) {
+    // Validar token de Turnstile solo si no está deshabilitado
+    if (process.env.DISABLE_TURNSTILE !== 'true') {
+      if (!turnstileToken) {
+        return NextResponse.json({ error: 'Token de verificación requerido' }, { status: 400 });
+      }
+      
       const isValidToken = await validateTurnstileToken(turnstileToken);
       if (!isValidToken) {
         return NextResponse.json({ error: 'Verificación de seguridad fallida' }, { status: 400 });

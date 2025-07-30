@@ -1,16 +1,24 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useToast } from '@/hooks/use-toast'
+import {
+  useRef,
+  useState,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+  useCallback
+} from 'react'
 
 interface TurnstileProps {
   siteKey: string
-  onVerify?: (token: string) => void
+  onVerify: (token: string) => void
   onError?: (error: string) => void
   onExpire?: () => void
   theme?: 'light' | 'dark'
   size?: 'normal' | 'compact'
   className?: string
+  autoResetOnError?: boolean
+  maxRetries?: number
 }
 
 declare global {
@@ -22,315 +30,447 @@ declare global {
           sitekey: string
           theme?: 'light' | 'dark'
           size?: 'normal' | 'compact'
-          callback?: (token: string) => void
-          'expired-callback'?: () => void
-          'error-callback'?: () => void
+          callback: (token: string) => void
+          'error-callback': (error: string) => void
+          'expired-callback': () => void
+          'unsupported-callback'?: () => void
+          'timeout-callback'?: () => void
         }
       ) => string
       reset: (widgetId: string) => void
+      remove: (widgetId: string) => void
+      execute: (widgetId: string) => void
+      getResponse: (widgetId: string) => string
     }
-    turnstileLoaded?: boolean
+    turnstileState: 'unloaded' | 'loading' | 'loaded' | 'error'
+    onTurnstileLoaded?: () => void
   }
 }
 
-export function Turnstile({
-  siteKey,
-  onVerify,
-  onError,
-  onExpire,
-  theme = 'light',
-  size = 'normal',
-  className = ''
-}: TurnstileProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [widgetId, setWidgetId] = useState<string | null>(null)
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const { toast } = useToast()
+interface TurnstileRef {
+  reset: () => void
+  execute: () => void
+  getResponse: () => string | null
+}
 
-  useEffect(() => {
-    // Evitar ejecuciones si ya está cargado
-    if (isLoaded) return
+const SCRIPT_LOAD_TIMEOUT = 15000
+const RETRY_DELAY = 2000
 
-    // Verificar si Turnstile ya está cargado
-    if (window.turnstile || window.turnstileLoaded) {
-      setIsLoaded(true)
-      setIsLoading(false)
-      return
-    }
-
-    // Buscar si el script ya existe
-    const existingScript = document.querySelector('script[src*="turnstile"]')
-    if (existingScript) {
-      // Si el script existe, esperar a que termine de cargar
-      const handleLoad = () => {
-        if (window.turnstile) {
-          window.turnstileLoaded = true
-          setIsLoaded(true)
-          setIsLoading(false)
+const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
+  (
+    {
+      siteKey,
+      onVerify,
+      onError,
+      onExpire,
+      theme = 'light',
+      size = 'normal',
+      className = '',
+      autoResetOnError = true,
+      maxRetries = 3
+    },
+    ref
+  ) => {
+    const containerRef = useRef<HTMLDivElement>(null)
+    const [widgetId, setWidgetId] = useState<string | null>(null)
+    const [isScriptLoaded, setIsScriptLoaded] = useState(false)
+    const [isRendering, setIsRendering] = useState(false)
+    const [retryCount, setRetryCount] = useState(0)
+    const [isDestroyed, setIsDestroyed] = useState(false)
+    const scriptTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    
+    // Resetear isDestroyed cuando el componente se monta
+    useEffect(() => {
+      setIsDestroyed(false)
+      
+      // Monitor para errores globales que podrían afectar Turnstile
+      const handleGlobalError = (event: ErrorEvent) => {
+        if (event.message.includes('turnstile') || event.message.includes('cloudflare')) {
+          console.error('🚨 Error global relacionado a Turnstile:', event.message)
         }
       }
+      
+      window.addEventListener('error', handleGlobalError)
+      
+      return () => {
+        window.removeEventListener('error', handleGlobalError)
+      }
+    }, [])
 
-      if (existingScript.getAttribute('data-loaded') === 'true') {
-        handleLoad()
+    const cleanup = useCallback(() => {
+      if (scriptTimeoutRef.current) {
+        clearTimeout(scriptTimeoutRef.current)
+        scriptTimeoutRef.current = undefined
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+        retryTimeoutRef.current = undefined
+      }
+    }, [])
+
+    const destroyWidget = useCallback(() => {
+      if (widgetId && window.turnstile?.remove) {
+        try {
+          window.turnstile.remove(widgetId)
+        } catch (error) {
+          console.warn('Error al remover widget Turnstile:', error)
+        }
+      }
+      setWidgetId(null)
+      setIsRendering(false)
+    }, [widgetId])
+
+    const handleError = useCallback((error: string, shouldRetry = true) => {
+      console.error('Turnstile error:', error)
+      
+      if (shouldRetry && retryCount < maxRetries && !isDestroyed) {
+        setRetryCount(prev => prev + 1)
+        
+        retryTimeoutRef.current = setTimeout(() => {
+          if (!isDestroyed) {
+            destroyWidget()
+            setIsRendering(false)
+          }
+        }, RETRY_DELAY)
+        
+        onError?.(`Error en la verificación. Reintentando... (${retryCount + 1}/${maxRetries})`)
       } else {
-        existingScript.addEventListener('load', handleLoad)
-        return () => existingScript.removeEventListener('load', handleLoad)
+        onError?.(error)
       }
-    } else {
-      // Si no existe, crearlo con evento de carga
-      const script = document.createElement('script')
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
-      script.async = true
-      script.defer = true
-      
-      const handleLoad = () => {
-        window.turnstileLoaded = true
-        setIsLoaded(true)
-        setIsLoading(false)
-        script.setAttribute('data-loaded', 'true')
+    }, [retryCount, maxRetries, isDestroyed, destroyWidget, onError])
+
+    const renderWidget = useCallback(() => {
+      if (!isScriptLoaded || !containerRef.current || !siteKey || isRendering || isDestroyed) {
+        return
       }
 
-      const handleError = () => {
-        const errorMessage = 'No se pudo cargar la verificación. Verifica tu conexión a internet.'
-        setError(errorMessage)
-        setIsLoading(false)
-        toast({
-          title: "Error de conexión",
-          description: errorMessage,
-          variant: "destructive",
+      if (!window.turnstile) {
+
+        return
+      }
+
+      setIsRendering(true)
+
+
+      try {
+        const id = window.turnstile.render(containerRef.current, {
+          sitekey: siteKey,
+          theme,
+          size,
+          callback: (token: string) => {
+    
+            setRetryCount(0)
+            onVerify(token)
+          },
+          'error-callback': (errorCode: string) => {
+            if (!isDestroyed) {
+              let errorMessage = 'Error en la verificación. Inténtalo de nuevo.'
+              
+              switch (errorCode) {
+                case '110000':
+                  errorMessage = 'Token de verificación inválido o expirado.'
+                  break
+                case '110001':
+                  errorMessage = 'Token de verificación ya usado.'
+                  break
+                case '110002':
+                  errorMessage = 'Dominio no autorizado.'
+                  break
+                case '110003':
+                  errorMessage = 'Clave de sitio inválida.'
+                  break
+                case '110004':
+                  errorMessage = 'Token de verificación malformado.'
+                  break
+                case '110005':
+                  errorMessage = 'Token de verificación no encontrado.'
+                  break
+                case '110006':
+                  errorMessage = 'Error interno del servidor.'
+                  break
+                case '110007':
+                  errorMessage = 'Token de verificación expirado.'
+                  break
+                default:
+                  errorMessage = `Error de verificación (${errorCode})`
+              }
+
+              handleError(errorMessage, autoResetOnError)
+            }
+          },
+          'expired-callback': () => {
+            if (!isDestroyed) {
+              onExpire?.()
+              if (autoResetOnError) {
+                setTimeout(() => {
+                  if (!isDestroyed && widgetId) {
+                    try {
+                      window.turnstile.reset(widgetId)
+                    } catch (error) {
+                      console.warn('Error al resetear widget expirado:', error)
+                      destroyWidget()
+                    }
+                  }
+                }, 100)
+              }
+            }
+          },
+          'unsupported-callback': () => {
+            if (!isDestroyed) {
+              handleError('Tu navegador no es compatible con la verificación.', false)
+            }
+          },
+          'timeout-callback': () => {
+            if (!isDestroyed) {
+              handleError('La verificación tardó demasiado tiempo.', autoResetOnError)
+            }
+          }
         })
+        
+        setWidgetId(id)
+        setIsRendering(false)
+        
+      } catch (error) {
+        setIsRendering(false)
+        console.error('❌ Error al renderizar Turnstile:', error)
+        handleError('No se pudo cargar la verificación. Recarga la página.', false)
+      }
+    }, [isScriptLoaded, siteKey, theme, size, onVerify, onExpire, handleError])
+
+    // Cargar script de Turnstile (solo una vez globalmente)
+    useEffect(() => {
+      if (typeof window === 'undefined' || isDestroyed) return
+
+      // Verificar si ya existe el script en el DOM
+      const existingScript = document.querySelector('script[src*="turnstile"]')
+      if (existingScript && window.turnstile) {
+        setIsScriptLoaded(true)
+        return
       }
 
-      script.addEventListener('load', handleLoad)
-      script.addEventListener('error', handleError)
-      
+      if (window.turnstileState === 'loaded' && window.turnstile) {
+        setIsScriptLoaded(true)
+        return
+      }
+
+      if (window.turnstileState === 'loading') {
+        const checkInterval = setInterval(() => {
+          if (window.turnstileState === 'loaded' && window.turnstile) {
+            setIsScriptLoaded(true)
+            clearInterval(checkInterval)
+          } else if (window.turnstileState === 'error') {
+            handleError('Error al cargar el script de verificación.', false)
+            clearInterval(checkInterval)
+          }
+        }, 100)
+        
+        return () => clearInterval(checkInterval)
+      }
+
+      // Solo crear script si no existe
+      if (!existingScript && !window.turnstileState) {
+        window.turnstileState = 'loading'
+        
+        const script = document.createElement('script')
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoaded'
+        script.async = true
+        script.defer = true
+        script.id = 'turnstile-script'
+
+        window.onTurnstileLoaded = () => {
+          if (scriptTimeoutRef.current) {
+            clearTimeout(scriptTimeoutRef.current)
+            scriptTimeoutRef.current = undefined
+          }
+          window.turnstileState = 'loaded'
+          setIsScriptLoaded(true)
+        }
+
+        script.onerror = () => {
+          cleanup()
+          window.turnstileState = 'error'
+          handleError('Error al cargar el script de verificación.', false)
+        }
+
+        // Timeout para carga del script
+        scriptTimeoutRef.current = setTimeout(() => {
+          if (window.turnstileState === 'loading') {
+            window.turnstileState = 'error'
+            handleError('Tiempo de espera agotado al cargar la verificación.', false)
+          }
+        }, SCRIPT_LOAD_TIMEOUT)
+
       document.head.appendChild(script)
+      }
 
       return () => {
-        script.removeEventListener('load', handleLoad)
-        script.removeEventListener('error', handleError)
+        cleanup()
       }
-    }
-  }, [isLoaded]) // Agregar isLoaded como dependencia para evitar bucles
+    }, [isDestroyed, handleError, cleanup])
 
-  useEffect(() => {
-    if (!isLoaded || !containerRef.current || !siteKey) return
-    if (widgetId) return // Evitar recrear si ya existe un widget
-
-    // Verificar si ya hay un widget en este contenedor
-    const existingWidget = containerRef.current.querySelector('[data-turnstile-widget-id]')
-    if (existingWidget) {
-      return
-    }
-
-    try {
-      const id = window.turnstile.render(containerRef.current, {
-        sitekey: siteKey,
-        theme,
-        size,
-        callback: (token: string) => {
-          setError(null) // Limpiar errores previos
-          onVerify?.(token)
-        },
-        'expired-callback': () => {
-          const errorMessage = 'La verificación ha expirado. Por favor, completa la verificación nuevamente.'
-          setError(errorMessage)
-          onExpire?.()
-          toast({
-            title: "Verificación expirada",
-            description: errorMessage,
-            variant: "destructive",
-          })
-        },
-        'error-callback': () => {
-          const errorMessage = 'Error en la verificación. Por favor, intenta nuevamente o recarga la página.'
-          setError(errorMessage)
-          onError?.(errorMessage)
-          toast({
-            title: "Error de verificación",
-            description: errorMessage,
-            variant: "destructive",
-          })
-        }
-      })
-      setWidgetId(id)
-      
-      // Marcar el contenedor como que ya tiene un widget
-      containerRef.current.setAttribute('data-turnstile-widget-id', id)
-    } catch (error) {
-      const errorMessage = 'Error al cargar la verificación. Por favor, recarga la página.'
-      console.error('Error al renderizar Turnstile:', error)
-      setError(errorMessage)
-      onError?.(errorMessage)
-      toast({
-        title: "Error de carga",
-        description: errorMessage,
-        variant: "destructive",
-      })
-    }
-
-    // Cleanup function
-    return () => {
-      if (widgetId && window.turnstile) {
-        try {
-          window.turnstile.reset(widgetId)
-          if (containerRef.current) {
-            containerRef.current.removeAttribute('data-turnstile-widget-id')
-          }
-        } catch (error) {
-          console.error('Error al limpiar Turnstile:', error)
-        }
-      }
-    }
-  }, [isLoaded, siteKey, theme, size]) // Remover widgetId para evitar bucles
-
-  const reset = () => {
-    if (widgetId && window.turnstile) {
-      window.turnstile.reset(widgetId)
-      setError(null) // Limpiar errores al resetear
-      // No resetear widgetId para permitir reutilización
-    }
-  }
-
-  const retry = () => {
-    setError(null)
-    setIsLoading(true)
-    setIsLoaded(false)
-    setWidgetId(null)
-    
-    // Forzar recarga del script
-    const script = document.createElement('script')
-    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
-    script.async = true
-    script.defer = true
-    script.onload = () => {
-      window.turnstileLoaded = true
-      setIsLoaded(true)
-      setIsLoading(false)
-    }
-    script.onerror = () => {
-      const errorMessage = 'No se pudo cargar la verificación. Verifica tu conexión a internet.'
-      setError(errorMessage)
-      setIsLoading(false)
-      toast({
-        title: "Error de conexión",
-        description: errorMessage,
-        variant: "destructive",
-      })
-    }
-    document.head.appendChild(script)
-  }
-
-  // Verificar si Turnstile está deshabilitado por variable de entorno
-  const isTurnstileDisabled = process.env.NEXT_PUBLIC_DISABLE_TURNSTILE === 'true'
+    // Renderizar widget cuando el script esté listo
+    useEffect(() => {
+      if (isScriptLoaded && !widgetId && !isRendering && !isDestroyed && containerRef.current && siteKey) {
+        // Renderizar inline para evitar dependencias circulares
+        if (!window.turnstile) {
   
-  // Si Turnstile está deshabilitado, mostrar solo en consola y retornar null
-  if (isTurnstileDisabled) {
-    console.log('🔓 Turnstile deshabilitado - modo desarrollo')
-    return null
-  }
+          return
+        }
 
-  // Si no hay site key configurada, mostrar mensaje
-  if (!siteKey) {
+        setIsRendering(true)
+
+        try {
+          const id = window.turnstile.render(containerRef.current, {
+            sitekey: siteKey,
+            theme,
+            size,
+            callback: (token: string) => {
+    
+              setRetryCount(0)
+              onVerify(token)
+            },
+            'error-callback': (errorCode: string) => {
+              let errorMessage = 'Error en la verificación. Inténtalo de nuevo.'
+              
+              switch (errorCode) {
+                case '110000':
+                  errorMessage = 'Token de verificación inválido o expirado.'
+                  break
+                case '110001':
+                  errorMessage = 'Token de verificación ya usado.'
+                  break
+                case '110002':
+                  errorMessage = 'Dominio no autorizado.'
+                  break
+                case '110003':
+                  errorMessage = 'Clave de sitio inválida.'
+                  break
+                default:
+                  errorMessage = `Error de verificación (${errorCode})`
+              }
+
+              handleError(errorMessage, autoResetOnError)
+          },
+          'expired-callback': () => {
+            onExpire?.()
+              if (autoResetOnError) {
+                setTimeout(() => {
+                  if (widgetId && window.turnstile) {
+                    try {
+                      window.turnstile.reset(widgetId)
+                    } catch (error) {
+                      console.warn('Error al resetear widget expirado:', error)
+                    }
+                  }
+                }, 100)
+              }
+            }
+          })
+          
+        setWidgetId(id)
+          setIsRendering(false)
+
+          
+
+      } catch (error) {
+          setIsRendering(false)
+          console.error('❌ Error al renderizar Turnstile:', error)
+          handleError('No se pudo cargar la verificación. Recarga la página.', false)
+        }
+      }
+    }, [isScriptLoaded, widgetId, isRendering, isDestroyed, siteKey, theme, size, onVerify, onExpire, handleError, autoResetOnError])
+
+    // Cleanup al desmontar (solo al desmontar realmente)
+    useEffect(() => {
+      return () => {
+        setIsDestroyed(true)
+        cleanup()
+        // NO destruir widget inmediatamente en desarrollo para evitar Fast Refresh issues
+        if (process.env.NODE_ENV === 'production') {
+          destroyWidget()
+        } else {
+          // En desarrollo, delay la destrucción para evitar conflictos con Fast Refresh
+          setTimeout(() => {
+            if (widgetId && window.turnstile?.remove) {
+              try {
+                window.turnstile.remove(widgetId)
+              } catch (error) {
+                console.warn('Error limpiando widget:', error)
+              }
+            }
+          }, 500)
+        }
+      }
+    }, [cleanup, destroyWidget, widgetId])
+
+    useImperativeHandle(ref, () => ({
+      reset: () => {
+        if (!widgetId || !window.turnstile || isDestroyed) return
+        
+          try {
+            window.turnstile.reset(widgetId)
+          setRetryCount(0)
+        } catch (error) {
+          console.error('Error al resetear Turnstile:', error)
+          destroyWidget()
+        }
+      },
+      execute: () => {
+        if (!widgetId || !window.turnstile || isDestroyed) return
+        
+        try {
+          window.turnstile.execute(widgetId)
+          } catch (error) {
+          console.error('Error al ejecutar Turnstile:', error)
+        }
+      },
+      getResponse: () => {
+        if (!widgetId || !window.turnstile || isDestroyed) return null
+        
+        try {
+          return window.turnstile.getResponse(widgetId)
+        } catch (error) {
+          console.error('Error al obtener respuesta de Turnstile:', error)
+          return null
+        }
+      }
+    }), [widgetId, isDestroyed, destroyWidget])
+
+    if (!siteKey) {
+      return (
+        <div className={`p-4 border-dashed border-2 rounded-md ${className}`}>
+          <p className='text-sm text-center text-yellow-600'>
+            Advertencia: La sitekey de Turnstile no está configurada.
+          </p>
+        </div>
+      )
+    }
+
     return (
       <div className={`turnstile-container ${className}`}>
-        <div className="text-sm text-muted-foreground p-4 border border-dashed border-gray-300 rounded-lg text-center">
-          ⚠️ Turnstile no configurado. Agrega NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY en tu .env.local
-        </div>
+        <div 
+          ref={containerRef} 
+          style={{ 
+            width: '100%', 
+            display: 'block',
+            visibility: 'visible',
+            opacity: 1,
+            minHeight: '65px'
+          }} 
+        />
+        {isRendering && (
+          <div className="flex items-center justify-center p-4">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <span className="ml-2 text-sm text-gray-600">Cargando verificación...</span>
+          </div>
+        )}
       </div>
     )
   }
+)
 
-  return (
-    <div className={`turnstile-container ${className}`}>
-      {error ? (
-        <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-red-600">⚠️</span>
-            <span className="text-sm font-medium text-red-800">Error de verificación</span>
-          </div>
-          <p className="text-sm text-red-700 mb-3">{error}</p>
-          <button
-            onClick={retry}
-            className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-          >
-            Reintentar
-          </button>
-        </div>
-      ) : (
-        <>
-          <div ref={containerRef} className="turnstile-widget" />
-          {isLoading && (
-            <div className="text-sm text-muted-foreground p-2 text-center">
-              <div className="flex items-center justify-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                Cargando verificación...
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
+Turnstile.displayName = 'Turnstile'
 
-// Hook para usar Turnstile en formularios
-export function useTurnstile() {
-  const [token, setToken] = useState<string | null>(null)
-  const [isVerifying, setIsVerifying] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const { toast } = useToast()
-  
-  // Verificar si Turnstile está deshabilitado
-  const isTurnstileDisabled = process.env.NEXT_PUBLIC_DISABLE_TURNSTILE === 'true'
-
-  const handleVerify = useCallback((turnstileToken: string) => {
-    setToken(turnstileToken)
-    setIsVerifying(false)
-    setError(null) // Limpiar errores al verificar exitosamente
-  }, [])
-
-  const handleError = useCallback((errorMessage: string) => {
-    console.error('Turnstile error:', errorMessage)
-    setError(errorMessage)
-    setIsVerifying(false)
-    setToken(null)
-    toast({
-      title: "Error de verificación",
-      description: errorMessage,
-      variant: "destructive",
-    })
-  }, []) // toast removido de dependencias
-
-  const handleExpire = useCallback(() => {
-    setToken(null)
-    setIsVerifying(false)
-    const errorMessage = 'La verificación ha expirado. Por favor, completa la verificación nuevamente.'
-    setError(errorMessage)
-    toast({
-      title: "Verificación expirada",
-      description: errorMessage,
-      variant: "destructive",
-    })
-  }, []) // toast removido de dependencias
-
-  const reset = useCallback(() => {
-    // Solo resetear token y error, mantener isVerifying para evitar problemas de estado
-    setToken(null)
-    setError(null)
-    // No resetear isVerifying aquí para evitar problemas de estado
-  }, [])
-
-  return {
-    token: isTurnstileDisabled ? 'disabled' : token, // Token simulado cuando está deshabilitado
-    isVerifying,
-    error,
-    handleVerify,
-    handleError,
-    handleExpire,
-    reset,
-    isDisabled: isTurnstileDisabled
-  }
-} 
+export { Turnstile }
+export type { TurnstileRef }

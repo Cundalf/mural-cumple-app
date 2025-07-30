@@ -10,6 +10,7 @@ import { emitMediaUploaded } from '@/lib/events';
 async function verifyTurnstile(token: string): Promise<boolean> {
   // Si Turnstile está deshabilitado, siempre retornar true
   if (process.env.DISABLE_TURNSTILE === 'true') {
+
     return true;
   }
 
@@ -26,6 +27,7 @@ async function verifyTurnstile(token: string): Promise<boolean> {
     });
 
     const data = await response.json();
+    
     return data.success === true;
   } catch (error) {
     console.error('Error al verificar Turnstile:', error);
@@ -42,14 +44,16 @@ export async function POST(request: NextRequest) {
     const files = data.getAll('files') as File[];
     const turnstileToken = data.get('turnstileToken') as string;
 
-    // Verificar Turnstile
-    if (!turnstileToken) {
-      return NextResponse.json({ error: 'Token de verificación requerido' }, { status: 400 });
-    }
+    // Verificar Turnstile solo si no está deshabilitado
+    if (process.env.DISABLE_TURNSTILE !== 'true') {
+      if (!turnstileToken) {
+        return NextResponse.json({ error: 'Token de verificación requerido' }, { status: 400 });
+      }
 
-    const isTurnstileValid = await verifyTurnstile(turnstileToken);
-    if (!isTurnstileValid) {
-      return NextResponse.json({ error: 'Verificación de seguridad fallida' }, { status: 403 });
+      const isTurnstileValid = await verifyTurnstile(turnstileToken);
+      if (!isTurnstileValid) {
+        return NextResponse.json({ error: 'Verificación de seguridad fallida' }, { status: 403 });
+      }
     }
 
     if (!files || files.length === 0) {

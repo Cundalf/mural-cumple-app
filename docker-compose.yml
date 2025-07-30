@@ -16,6 +16,9 @@ services:
       # Variables de Cloudflare Turnstile (configurar en .env)
       - NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY}
       - CLOUDFLARE_TURNSTILE_SECRET_KEY=${CLOUDFLARE_TURNSTILE_SECRET_KEY}
+      # Variables para deshabilitar Turnstile (opcional, para desarrollo/testing)
+      - NEXT_PUBLIC_DISABLE_TURNSTILE=${NEXT_PUBLIC_DISABLE_TURNSTILE:-false}
+      - DISABLE_TURNSTILE=${DISABLE_TURNSTILE:-false}
     volumes:
       # Persistencia de la base de datos SQLite
       - ./data/db:/app/db
