@@ -9,9 +9,6 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon.svg',
   },
-  other: {
-    'Content-Security-Policy': "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com;"
-  }
 }
 
 export default function RootLayout({
