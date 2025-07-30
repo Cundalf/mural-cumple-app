@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  mural-cumple-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mural-cumple-app
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      # Variables de Cloudflare Turnstile (configurar en .env)
+      - NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY}
+      - CLOUDFLARE_TURNSTILE_SECRET_KEY=${CLOUDFLARE_TURNSTILE_SECRET_KEY}
+    volumes:
+      # Persistencia de la base de datos SQLite
+      - ./data/db:/app/db
+      # Persistencia de archivos subidos
+      - ./data/uploads:/app/uploads
+    networks:
+      - caddy_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  caddy_network:
+    external: true 

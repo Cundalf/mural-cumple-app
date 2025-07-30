@@ -50,3 +50,7 @@ database.sqlite*
 
 # OS
 Thumbs.db
+
+# Docker
+data/
+.env

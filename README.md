@@ -22,6 +22,7 @@ Una aplicación web para celebrar momentos especiales con una galería de fotos/
 - **Cloudflare Turnstile** - Protección anti-bots
 - **Tailwind CSS** - Estilos
 - **Radix UI** - Componentes
+- **Docker** - Contenedores para producción
 
 ## Instalación 🚀
 
@@ -131,18 +132,76 @@ DISABLE_TURNSTILE=true
 # Cloudflare Turnstile para protección anti-bots
 NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=your_site_key
 CLOUDFLARE_TURNSTILE_SECRET_KEY=your_secret_key
+
+# Configuración de la aplicación
+NODE_ENV=production
+PORT=3000
+HOSTNAME=0.0.0.0
 ```
 
+**Nota:** Para producción, copia `env.production.example` como `.env` y configura tus valores reales.
+
 ## Despliegue 🚀
+
+### Desarrollo Local
 
 ```bash
 pnpm build
 pnpm start
 ```
 
-- La base de datos SQLite se crea automáticamente
-- El directorio `uploads/` se genera automáticamente
-- No requiere configuración adicional por defecto
+### Producción con Docker
+
+1. **Configurar variables de entorno:**
+   ```bash
+   cp env.production.example .env
+   # Editar .env con tus claves de Cloudflare Turnstile
+   ```
+
+2. **Construir y ejecutar:**
+   ```bash
+   docker-compose up -d --build
+   ```
+
+3. **Verificar:**
+   ```bash
+   curl http://localhost:3000/api/health
+   ```
+
+### Configuración de Caddy (Recomendada)
+
+Si usas Caddy como proxy reverso, agrega esta configuración a tu `Caddyfile`:
+
+```caddy
+tu-dominio.com {
+    reverse_proxy mural-cumple-app:3000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up Host {host}
+    }
+    
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+    
+    encode gzip
+}
+```
+
+**Nota:** Asegúrate de que el contenedor de Caddy esté en la misma red `caddy_network` que la aplicación.
+
+### Características de Producción
+
+- ✅ Multi-stage Docker build optimizado
+- ✅ Health checks automáticos
+- ✅ Persistencia de datos con volúmenes
+- ✅ Variables de entorno seguras
+- ✅ Usuario no-root en contenedor
+- ✅ Integración con Caddy como proxy reverso
 
 ## Personalización 🎨
 
