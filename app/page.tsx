@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Camera, Heart } from "lucide-react"
+import { QRDialog } from "@/components/ui/qr-dialog"
 
 export default function HomePage() {
   return (
@@ -70,6 +71,9 @@ export default function HomePage() {
           <p className="text-gray-500 text-lg">Hecho con 💕 para celebrar momentos especiales</p>
         </div>
       </div>
+      
+      {/* QR Dialog Component */}
+      <QRDialog />
     </div>
   )
 }
