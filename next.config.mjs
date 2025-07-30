@@ -28,12 +28,13 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value:
-              "default-src 'self';" +
-              " script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;" +
-              " style-src 'self' 'unsafe-inline';" +
-              " img-src 'self' data: https:;" +
-              " connect-src 'self' https://challenges.cloudflare.com;" +
-              " frame-src 'self' https://challenges.cloudflare.com;",
+            "default-src 'self';" +
+            " script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com;" +
+            " style-src 'self' 'unsafe-inline';" +
+            " img-src 'self' data: https:;" +
+            " connect-src 'self' https://challenges.cloudflare.com;" +
+            " frame-src 'self' https://challenges.cloudflare.com;" +
+            " sandbox allow-same-origin allow-scripts allow-popups;",
           },
         ],
       },
