@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY}
+        - NEXT_PUBLIC_DISABLE_TURNSTILE=${NEXT_PUBLIC_DISABLE_TURNSTILE:-false}
     container_name: mural-cumple-app
     restart: unless-stopped
     ports:

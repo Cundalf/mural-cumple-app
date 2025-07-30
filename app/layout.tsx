@@ -1,12 +1,11 @@
-import type { Metadata } from 'next'
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
-import './globals.css'
-import { Toaster } from '@/components/ui/toaster'
+import type { Metadata } from "next"
+import { GeistSans, GeistMono } from "geist/font"
+import "./globals.css"
+import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
-  title: 'Celebremos juntos',
-  description: 'Created by Cundalf with v0, Next.js, Tailwind CSS and Cursor AI',
+  title: "Mural de Cumpleaños",
+  description: "Comparte tus mensajes y fotos especiales",
   icons: {
     icon: '/favicon.svg',
   },
@@ -27,8 +26,17 @@ html {
   --font-mono: ${GeistMono.variable};
 }
         `}</style>
-        {/* Cloudflare Turnstile */}
-        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+        {/* Cloudflare Turnstile - Cargar solo si está habilitado */}
+        {process.env.NEXT_PUBLIC_DISABLE_TURNSTILE !== 'true' && (
+          <script 
+            src="https://challenges.cloudflare.com/turnstile/v0/api.js" 
+            async 
+            defer
+            onError={(e) => {
+              console.warn('Error cargando script de Turnstile:', e)
+            }}
+          />
+        )}
         {/* Error handler para scripts externos */}
         <script dangerouslySetInnerHTML={{
           __html: `
