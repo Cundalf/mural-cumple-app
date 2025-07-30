@@ -13,7 +13,7 @@ COPY postcss.config.mjs ./
 # Instalar dependencias
 RUN npm ci --only=production
 
-# Copiar código fuente
+# Copiar todo el código fuente
 COPY . .
 
 # Construir la aplicación
@@ -32,6 +32,11 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+
+# Copiar archivos adicionales que pueden no estar incluidos en standalone
+COPY --from=builder /app/hooks ./hooks
+COPY --from=builder /app/components ./components
+COPY --from=builder /app/lib ./lib
 
 # Crear directorios necesarios
 RUN mkdir -p /app/db /app/uploads
