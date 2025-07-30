@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2 } from "lucide-react"
 import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "@/components/ui/dialog"
 import { useRealtime } from "@/hooks/use-realtime"
+import { Turnstile, useTurnstile } from "@/components/ui/turnstile"
 
 interface MediaItem {
   id: string
@@ -27,6 +28,9 @@ export default function GaleriaPage() {
   const [isLoading, setIsLoading] = useState(true)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
+  
+  // Turnstile hook para protección contra bots
+  const { token: turnstileToken, error: turnstileError, handleVerify, handleError, handleExpire, reset, isDisabled: isTurnstileDisabled } = useTurnstile()
 
   // Handlers estables para eventos en tiempo real
   const handleMediaUploaded = useCallback((media: MediaItem) => {
@@ -79,6 +83,17 @@ export default function GaleriaPage() {
     const files = event.target.files
     if (!files || files.length === 0) return
 
+    // Verificar que Turnstile haya sido completado (solo si no está deshabilitado)
+    if (!isTurnstileDisabled && !turnstileToken) {
+      if (turnstileError) {
+        alert(`Error de verificación: ${turnstileError}`)
+      } else {
+        alert('Por favor, completa la verificación de seguridad antes de subir archivos')
+      }
+      event.target.value = ""
+      return
+    }
+
     setIsUploading(true)
 
     try {
@@ -89,18 +104,24 @@ export default function GaleriaPage() {
         formData.append('files', files[i])
       }
 
+      // Agregar el token de Turnstile
+      formData.append('turnstileToken', turnstileToken)
+
       const response = await fetch('/api/media/upload', {
         method: 'POST',
         body: formData,
       })
 
       if (!response.ok) {
-        throw new Error('Error al subir archivos')
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Error al subir archivos')
       }
 
       // Los archivos se agregarán automáticamente via eventos en tiempo real
+      reset() // Resetear Turnstile para el siguiente envío
     } catch (error) {
       console.error('Error al subir archivos:', error)
+      alert('Error al subir archivos. Por favor, intenta de nuevo.')
     } finally {
       setIsUploading(false)
       event.target.value = ""
@@ -202,18 +223,52 @@ export default function GaleriaPage() {
                   accept="image/*,video/*"
                   onChange={handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  disabled={isUploading}
+                  disabled={isUploading || (!isTurnstileDisabled && !turnstileToken)}
                 />
-                <div className="border-2 border-dashed border-blue-300 rounded-lg p-8 hover:border-blue-400 transition-colors bg-blue-50/50 hover:bg-blue-100/50">
+                <div className={`border-2 border-dashed rounded-lg p-8 transition-colors ${
+                  isTurnstileDisabled || turnstileToken 
+                    ? 'border-blue-300 hover:border-blue-400 bg-blue-50/50 hover:bg-blue-100/50' 
+                    : 'border-gray-300 bg-gray-50/50'
+                }`}>
                   <div className="flex flex-col items-center">
-                    <Upload className="w-12 h-12 text-blue-500 mb-4" />
-                    <p className="text-xl font-semibold text-blue-700 mb-2">
-                      {isUploading ? "Subiendo archivos..." : "Toca aquí para seleccionar"}
+                    <Upload className={`w-12 h-12 mb-4 ${
+                      isTurnstileDisabled || turnstileToken ? 'text-blue-500' : 'text-gray-400'
+                    }`} />
+                    <p className={`text-xl font-semibold mb-2 ${
+                      isTurnstileDisabled || turnstileToken ? 'text-blue-700' : 'text-gray-500'
+                    }`}>
+                      {isUploading ? "Subiendo archivos..." : 
+                       isTurnstileDisabled ? "Toca aquí para seleccionar" :
+                       turnstileToken ? "Toca aquí para seleccionar" : "Completa la verificación primero"}
                     </p>
-                    <p className="text-lg text-blue-600">Fotos y videos</p>
+                    <p className={`text-lg ${
+                      isTurnstileDisabled || turnstileToken ? 'text-blue-600' : 'text-gray-400'
+                    }`}>Fotos y videos</p>
                   </div>
                 </div>
               </div>
+              
+              {/* Turnstile para protección contra bots */}
+              <div className="flex justify-center mt-6">
+                <Turnstile
+                  siteKey={process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''}
+                  onVerify={handleVerify}
+                  onError={handleError}
+                  onExpire={handleExpire}
+                  theme="light"
+                  size="normal"
+                />
+              </div>
+              
+              {/* Mostrar error de Turnstile si existe */}
+              {turnstileError && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-red-600">⚠️</span>
+                    <span className="text-sm text-red-700">{turnstileError}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

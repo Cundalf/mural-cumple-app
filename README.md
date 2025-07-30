@@ -4,22 +4,24 @@ Una aplicación web para celebrar momentos especiales con una galería de fotos/
 
 ## Características ✨
 
-- **Galería de Recuerdos**: Los usuarios pueden subir fotos y videos que se comparten instantáneamente
-- **Mural de Mensajes**: Espacio para escribir mensajes especiales con colores aleatorios
-- **Tiempo Real**: Todas las actualizaciones se sincronizan automáticamente entre usuarios
-- **Modo Administrador**: Funciones para eliminar contenido inapropiado
-- **Exportar PDF**: Genera un PDF bonito con todos los mensajes del mural
-- **Base de Datos SQLite**: Almacenamiento persistente y confiable
-- **Diseño Responsivo**: Funciona perfectamente en móviles y escritorio
+- **Galería de Recuerdos**: Subir fotos y videos que se comparten instantáneamente
+- **Mural de Mensajes**: Escribir mensajes especiales con colores aleatorios
+- **Tiempo Real**: Actualizaciones automáticas entre usuarios
+- **Protección Anti-Bots**: Cloudflare Turnstile integrado
+- **Modo Administrador**: Eliminar contenido inapropiado
+- **Exportar PDF**: Generar PDF con todos los mensajes
+- **Base de Datos SQLite**: Almacenamiento persistente
+- **Diseño Responsivo**: Funciona en móviles y escritorio
 
 ## Tecnologías 🛠️
 
 - **Next.js 15** - Framework de React
 - **TypeScript** - Tipado estático
-- **SQLite** (better-sqlite3) - Base de datos
-- **Server-Sent Events** - Actualizaciones en tiempo real
+- **SQLite** - Base de datos
+- **Server-Sent Events** - Tiempo real
+- **Cloudflare Turnstile** - Protección anti-bots
 - **Tailwind CSS** - Estilos
-- **Radix UI** - Componentes de interfaz
+- **Radix UI** - Componentes
 
 ## Instalación 🚀
 
@@ -34,12 +36,19 @@ Una aplicación web para celebrar momentos especiales con una galería de fotos/
    pnpm install
    ```
 
-3. **Iniciar servidor de desarrollo**
+3. **Configurar variables de entorno** (opcional)
+   ```bash
+   # Crear .env.local para desarrollo
+   cp env.example .env.local
+   # Editar según necesites
+   ```
+
+4. **Iniciar servidor de desarrollo**
    ```bash
    pnpm dev
    ```
 
-4. **Abrir en el navegador**
+5. **Abrir en el navegador**
    ```
    http://localhost:3000
    ```
@@ -108,23 +117,32 @@ En modo admin puedes:
 ### Eventos en Tiempo Real
 - `GET /api/events` - Stream de Server-Sent Events
 
-## Configuración de Producción 🏗️
+## Variables de Entorno 🔧
 
-1. **Variables de entorno** (opcional)
-   ```bash
-   # No requiere configuración adicional por defecto
-   ```
+### Desarrollo (opcional)
+```bash
+# Deshabilitar Turnstile para desarrollo más rápido
+NEXT_PUBLIC_DISABLE_TURNSTILE=true
+DISABLE_TURNSTILE=true
+```
 
-2. **Build para producción**
-   ```bash
-   pnpm build
-   pnpm start
-   ```
+### Producción (recomendado)
+```bash
+# Cloudflare Turnstile para protección anti-bots
+NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=your_site_key
+CLOUDFLARE_TURNSTILE_SECRET_KEY=your_secret_key
+```
 
-3. **Despliegue**
-   - La aplicación incluye todo lo necesario
-   - La base de datos SQLite se crea automáticamente
-   - El directorio `uploads/` se genera automáticamente
+## Despliegue 🚀
+
+```bash
+pnpm build
+pnpm start
+```
+
+- La base de datos SQLite se crea automáticamente
+- El directorio `uploads/` se genera automáticamente
+- No requiere configuración adicional por defecto
 
 ## Personalización 🎨
 
@@ -142,19 +160,19 @@ La aplicación usa Tailwind CSS. Modifica las clases en los componentes para per
 
 ## Solución de Problemas 🔧
 
-### La base de datos no se crea
-- Asegúrate de que el proceso tenga permisos de escritura
-- Verifica que no hay procesos bloqueando el archivo
+### Base de datos no se crea
+- Verificar permisos de escritura
+- Comprobar que no hay procesos bloqueando el archivo
 
-### Los archivos no se suben
-- Verifica que el directorio `uploads/` existe
-- Comprueba los permisos del directorio
-- Revisa la consola del navegador para errores
+### Archivos no se suben
+- Verificar que existe el directorio `uploads/`
+- Comprobar permisos del directorio
+- Revisar consola del navegador
 
-### Las actualizaciones en tiempo real no funcionan
-- Verifica que el servidor esté ejecutándose
-- Comprueba la conexión SSE en las herramientas de desarrollador
-- Asegúrate de que no hay proxies bloqueando conexiones persistentes
+### Tiempo real no funciona
+- Verificar que el servidor esté ejecutándose
+- Comprobar conexión SSE en herramientas de desarrollador
+- Asegurar que no hay proxies bloqueando conexiones
 
 ## Contribuir 🤝
 

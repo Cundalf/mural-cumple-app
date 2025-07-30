@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ArrowLeft, Heart, Send, Trash2, Download } from "lucide-react"
 import { useRealtime } from "@/hooks/use-realtime"
+import { Turnstile, useTurnstile } from "@/components/ui/turnstile"
 
 interface Message {
   id: string
@@ -49,6 +50,9 @@ export default function MuralPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
+  
+  // Turnstile hook para protección contra bots
+  const { token: turnstileToken, error: turnstileError, handleVerify, handleError, handleExpire, reset, isDisabled: isTurnstileDisabled } = useTurnstile()
 
   // Handlers estables para eventos en tiempo real
   const handleMessageCreated = useCallback((message: Message) => {
@@ -93,6 +97,16 @@ export default function MuralPage() {
     e.preventDefault()
 
     if (!newMessage.trim() || !authorName.trim() || isSubmitting) return
+    
+    // Verificar que Turnstile haya sido completado (solo si no está deshabilitado)
+    if (!isTurnstileDisabled && !turnstileToken) {
+      if (turnstileError) {
+        alert(`Error de verificación: ${turnstileError}`)
+      } else {
+        alert('Por favor, completa la verificación de seguridad')
+      }
+      return
+    }
 
     setIsSubmitting(true)
 
@@ -108,17 +122,22 @@ export default function MuralPage() {
           text: newMessage.trim(),
           author: authorName.trim(),
           color,
+          turnstileToken, // Incluir el token de Turnstile
         }),
       })
 
       if (response.ok) {
         // El mensaje se agregará automáticamente via eventos en tiempo real
         setNewMessage("")
+        setAuthorName("")
+        reset() // Resetear Turnstile para el siguiente envío
       } else {
-        throw new Error('Error al enviar mensaje')
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Error al enviar mensaje')
       }
     } catch (error) {
       console.error('Error al enviar mensaje:', error)
+      alert('Error al enviar mensaje. Por favor, intenta de nuevo.')
     } finally {
       setIsSubmitting(false)
     }
@@ -477,11 +496,34 @@ export default function MuralPage() {
                 <p className="text-sm text-gray-500 mt-2">{newMessage.length}/200 caracteres</p>
               </div>
 
+              {/* Turnstile para protección contra bots */}
+              <div className="flex justify-center">
+                <Turnstile
+                  siteKey={process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''}
+                  onVerify={handleVerify}
+                  onError={handleError}
+                  onExpire={handleExpire}
+                  theme="light"
+                  size="normal"
+                  className="mt-4"
+                />
+              </div>
+              
+              {/* Mostrar error de Turnstile si existe */}
+              {turnstileError && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-red-600">⚠️</span>
+                    <span className="text-sm text-red-700">{turnstileError}</span>
+                  </div>
+                </div>
+              )}
+
               <Button
                 type="submit"
                 size="lg"
                 className="w-full bg-yellow-500 hover:bg-yellow-600 text-white py-4 text-lg rounded-full"
-                disabled={!newMessage.trim() || !authorName.trim() || isSubmitting}
+                disabled={!newMessage.trim() || !authorName.trim() || (!isTurnstileDisabled && !turnstileToken) || isSubmitting}
               >
                 <Send className="w-5 h-5 mr-2" />
                 {isSubmitting ? "Enviando..." : "Enviar Mensaje"}
