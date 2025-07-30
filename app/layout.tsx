@@ -5,8 +5,11 @@ import './globals.css'
 import { Toaster } from '@/components/ui/toaster'
 
 export const metadata: Metadata = {
-  title: 'Mural Cumple App',
+  title: 'Celebremos juntos',
   description: 'Created by Cundalf with v0, Next.js, Tailwind CSS and Cursor AI',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

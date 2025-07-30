@@ -8,7 +8,7 @@ import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2, Loader2 } from "lucide-react"
+import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
 import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "@/components/ui/dialog"
 import { useRealtime } from "@/hooks/use-realtime"
 import { Turnstile, type TurnstileRef } from "@/components/ui/turnstile"
@@ -27,6 +27,7 @@ interface MediaItem {
 export default function GaleriaPage() {
   const siteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null)
+  const [currentMediaIndex, setCurrentMediaIndex] = useState<number>(0)
   const [isUploading, setIsUploading] = useState(false)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
@@ -83,6 +84,11 @@ export default function GaleriaPage() {
     setSelectedMedia(prev => prev?.id === data.id ? null : prev);
   }, [setMediaItems]);
 
+  const handleOpenMedia = useCallback((media: MediaItem, index: number) => {
+    setSelectedMedia(media);
+    setCurrentMediaIndex(index);
+  }, []);
+
   const handleConnected = useCallback(() => {
     // Hacer refresh para sincronizar estado inicial
     refresh();
@@ -106,6 +112,22 @@ export default function GaleriaPage() {
     
     return uniqueItems;
   }, [mediaItems]);
+
+  const handleNextMedia = useCallback(() => {
+    if (cleanMediaItems.length > 0) {
+      const nextIndex = (currentMediaIndex + 1) % cleanMediaItems.length;
+      setCurrentMediaIndex(nextIndex);
+      setSelectedMedia(cleanMediaItems[nextIndex]);
+    }
+  }, [currentMediaIndex, cleanMediaItems]);
+
+  const handlePrevMedia = useCallback(() => {
+    if (cleanMediaItems.length > 0) {
+      const prevIndex = currentMediaIndex === 0 ? cleanMediaItems.length - 1 : currentMediaIndex - 1;
+      setCurrentMediaIndex(prevIndex);
+      setSelectedMedia(cleanMediaItems[prevIndex]);
+    }
+  }, [currentMediaIndex, cleanMediaItems]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
@@ -377,87 +399,130 @@ export default function GaleriaPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {cleanMediaItems.map((item) => (
-                <Dialog key={item.id}>
-                  <DialogTrigger asChild>
-                    <Card className="cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-pink-200 hover:border-pink-300 group overflow-hidden relative">
-                      {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            deleteMedia(item.id)
-                          }}
-                          className="absolute top-2 right-2 z-20 text-white hover:text-red-600 hover:bg-white/90 bg-black/50 rounded-full p-2"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                      <CardContent className="p-0 relative aspect-square">
-                        {item.type === "image" ? (
-                          <img
-                            src={item.url || "/placeholder.svg"}
-                            alt="Imagen compartida"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="relative w-full h-full bg-gray-900">
-                            <video src={item.url} className="w-full h-full object-cover" muted />
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                              <Video className="w-12 h-12 text-white" />
-                            </div>
-                          </div>
-                        )}
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                          <p className="text-white/80 text-xs">{new Date(item.timestamp).toLocaleString()}</p>
+              {cleanMediaItems.map((item, index) => (
+                <Card 
+                  key={item.id} 
+                  className="cursor-pointer hover:shadow-xl transition-all duration-300 border-2 border-pink-200 hover:border-pink-300 group overflow-hidden relative"
+                  onClick={() => handleOpenMedia(item, index)}
+                >
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteMedia(item.id)
+                      }}
+                      className="absolute top-2 right-2 z-20 text-white hover:text-red-600 hover:bg-white/90 bg-black/50 rounded-full p-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                  <CardContent className="p-0 relative aspect-square">
+                    {item.type === "image" ? (
+                      <img
+                        src={item.url || "/placeholder.svg"}
+                        alt="Imagen compartida"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="relative w-full h-full bg-gray-900">
+                        <video src={item.url} className="w-full h-full object-cover" muted />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Video className="w-12 h-12 text-white" />
                         </div>
-                      </CardContent>
-                    </Card>
-                  </DialogTrigger>
-                  <DialogContent
-                    className="max-w-5xl max-h-[95vh] p-0 bg-black/95 border-0"
-                    aria-describedby="media-description"
-                  >
-                    <DialogTitle className="sr-only">
-                      Ver {item.type === "image" ? "imagen" : "video"} en tamaño completo
-                    </DialogTitle>
-                    <DialogClose asChild>
-                      <Button
-                        variant="ghost"
-                        size="lg"
-                        className="absolute top-4 right-4 z-50 text-white hover:text-gray-300 hover:bg-white/10 rounded-full p-3"
-                        aria-label="Cerrar"
-                      >
-                        <X className="w-8 h-8" />
-                      </Button>
-                    </DialogClose>
-                    <div className="flex items-center justify-center min-h-[80vh] p-4">
-                      {item.type === "image" ? (
-                        <img
-                          src={item.url || "/placeholder.svg"}
-                          alt="Imagen compartida"
-                          className="max-w-full max-h-full object-contain rounded-lg"
-                        />
-                      ) : (
-                        <video
-                          src={item.url}
-                          controls
-                          className="max-w-full max-h-full object-contain rounded-lg"
-                          autoPlay
-                        />
-                      )}
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+                      <p className="text-white/80 text-xs">{new Date(item.timestamp).toLocaleString()}</p>
                     </div>
-                    <div className="absolute bottom-4 left-4 text-white/80 bg-black/50 px-4 py-2 rounded-lg">
-                      <p className="text-sm">Subido el {new Date(item.timestamp).toLocaleString()}</p>
-                    </div>
-                    <div id="media-description" className="sr-only">
-                      Modal para ver {item.type === "image" ? "imagen" : "video"} en tamaño completo
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                  </CardContent>
+                </Card>
               ))}
             </div>
+
+            {/* Modal con navegación */}
+            {selectedMedia && (
+              <Dialog open={!!selectedMedia} onOpenChange={() => setSelectedMedia(null)}>
+                <DialogContent
+                  className="max-w-5xl max-h-[95vh] p-0 bg-black/95 border-0"
+                  aria-describedby="media-description"
+                >
+                  <DialogTitle className="sr-only">
+                    Ver {selectedMedia.type === "image" ? "imagen" : "video"} en tamaño completo
+                  </DialogTitle>
+                  <DialogClose asChild>
+                    <Button
+                      variant="ghost"
+                      size="lg"
+                      className="absolute top-4 right-4 z-50 text-white hover:text-gray-300 hover:bg-white/10 rounded-full p-3"
+                      aria-label="Cerrar"
+                    >
+                      <X className="w-8 h-8" />
+                    </Button>
+                  </DialogClose>
+                  
+                  {/* Flecha izquierda */}
+                  {cleanMediaItems.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="lg"
+                      onClick={handlePrevMedia}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 z-50 text-white hover:text-gray-300 hover:bg-white/10 rounded-full p-3"
+                      aria-label="Imagen anterior"
+                    >
+                      <ChevronLeft className="w-8 h-8" />
+                    </Button>
+                  )}
+                  
+                  {/* Flecha derecha */}
+                  {cleanMediaItems.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="lg"
+                      onClick={handleNextMedia}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 z-50 text-white hover:text-gray-300 hover:bg-white/10 rounded-full p-3"
+                      aria-label="Imagen siguiente"
+                    >
+                      <ChevronRight className="w-8 h-8" />
+                    </Button>
+                  )}
+                  
+                  <div className="flex items-center justify-center min-h-[80vh] p-4">
+                    {selectedMedia.type === "image" ? (
+                      <img
+                        src={selectedMedia.url || "/placeholder.svg"}
+                        alt="Imagen compartida"
+                        className="max-w-full max-h-full object-contain rounded-lg"
+                      />
+                    ) : (
+                      <video
+                        src={selectedMedia.url}
+                        controls
+                        className="max-w-full max-h-full object-contain rounded-lg"
+                        autoPlay
+                      />
+                    )}
+                  </div>
+                  
+                  {/* Indicador de posición */}
+                  {cleanMediaItems.length > 1 && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/80 bg-black/50 px-4 py-2 rounded-lg">
+                      <p className="text-sm font-medium">
+                        {currentMediaIndex + 1} de {cleanMediaItems.length}
+                      </p>
+                    </div>
+                  )}
+                  
+                  <div className="absolute bottom-4 left-4 text-white/80 bg-black/50 px-4 py-2 rounded-lg">
+                    <p className="text-sm">Subido el {new Date(selectedMedia.timestamp).toLocaleString()}</p>
+                  </div>
+                  <div id="media-description" className="sr-only">
+                    Modal para ver {selectedMedia.type === "image" ? "imagen" : "video"} en tamaño completo
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
 
             {isLoadingMore && (
               <div className="flex justify-center items-center py-8">
