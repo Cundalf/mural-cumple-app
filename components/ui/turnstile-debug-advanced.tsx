@@ -49,6 +49,19 @@ export function TurnstileDebugAdvanced({ siteKey, className = '' }: TurnstileDeb
         }))
       }
 
+      // Verificar iframes de Turnstile en todo el documento
+      const allIframes = Array.from(document.querySelectorAll('iframe'))
+      info.turnstileIframes = allIframes.filter(iframe => 
+        iframe.src?.includes('cloudflare.com') || 
+        iframe.src?.includes('turnstile') ||
+        iframe.id?.startsWith('cf-chl-widget-')
+      ).map(iframe => ({
+        id: iframe.id,
+        src: iframe.src,
+        visible: iframe.style.display !== 'none' && iframe.style.visibility !== 'hidden',
+        parent: iframe.parentElement?.className || 'no-parent-class'
+      }))
+
       // Verificar contenedores de Turnstile
       const turnstileContainers = document.querySelectorAll('.turnstile-container')
       info.containers = {
@@ -56,9 +69,13 @@ export function TurnstileDebugAdvanced({ siteKey, className = '' }: TurnstileDeb
         containers: Array.from(turnstileContainers).map((container, index) => {
           const iframe = container.querySelector('iframe')
           const div = container.querySelector('div')
+          const cfWidget = container.querySelector('[id^="cf-chl-widget-"]')
+          
           return {
             index,
             hasIframe: !!iframe,
+            hasCfWidget: !!cfWidget,
+            widgetId: cfWidget?.id || 'no-id',
             iframeSrc: iframe?.src || 'no-src',
             iframeVisible: iframe ? 
               (iframe.style.display !== 'none' && iframe.style.visibility !== 'hidden' && iframe.style.opacity !== '0') : 
@@ -66,7 +83,8 @@ export function TurnstileDebugAdvanced({ siteKey, className = '' }: TurnstileDeb
             divVisible: div ? 
               (div.style.display !== 'none' && div.style.visibility !== 'hidden' && div.style.opacity !== '0') : 
               false,
-            childrenCount: container.children.length
+            childrenCount: container.children.length,
+            childrenTypes: Array.from(container.children).map(child => child.tagName.toLowerCase())
           }
         })
       }
@@ -171,9 +189,11 @@ export function TurnstileDebugAdvanced({ siteKey, className = '' }: TurnstileDeb
                   </span>
                 </div>
                 <div className="text-gray-500 mt-1">
+                  <div>Widget ID: {container.widgetId}</div>
+                  <div>CF Widget: {container.hasCfWidget ? 'Sí' : 'No'}</div>
                   <div>Iframe visible: {container.iframeVisible ? 'Sí' : 'No'}</div>
                   <div>Div visible: {container.divVisible ? 'Sí' : 'No'}</div>
-                  <div>Hijos: {container.childrenCount}</div>
+                  <div>Hijos: {container.childrenCount} ({container.childrenTypes?.join(', ') || 'ninguno'})</div>
                 </div>
               </div>
             ))}
@@ -189,6 +209,19 @@ export function TurnstileDebugAdvanced({ siteKey, className = '' }: TurnstileDeb
                   async: {script.async ? 'Sí' : 'No'} | 
                   defer: {script.defer ? 'Sí' : 'No'} | 
                   loaded: {script.loaded ? 'Sí' : 'No'}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Iframes de Turnstile */}
+          <div className="border-t pt-2">
+            <h4 className="font-medium text-gray-700 mb-2">Iframes Turnstile ({debugInfo.turnstileIframes?.length || 0})</h4>
+            {debugInfo.turnstileIframes?.map((iframe: any, index: number) => (
+              <div key={index} className="bg-gray-50 p-2 rounded text-xs">
+                <div className="text-gray-600">ID: {iframe.id || 'sin-id'}</div>
+                <div className="text-gray-500 mt-1">
+                  Visible: {iframe.visible ? 'Sí' : 'No'} | Padre: {iframe.parent}
                 </div>
               </div>
             ))}
