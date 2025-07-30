@@ -196,15 +196,44 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
 
     // Función de renderizado estable sin useCallback para evitar problemas de dependencias
     const renderWidget = () => {
-      if (!isScriptLoaded || !containerRef.current || !siteKey || isRendering || isDestroyed || isResetting) {
+      console.log('🔧 Iniciando renderWidget...')
+      
+      if (!isScriptLoaded) {
+        console.log('❌ Script no cargado')
+        return
+      }
+      
+      if (!containerRef.current) {
+        console.log('❌ Container no disponible')
+        return
+      }
+      
+      if (!siteKey) {
+        console.log('❌ Site key no disponible')
+        return
+      }
+      
+      if (isRendering) {
+        console.log('❌ Ya está renderizando')
+        return
+      }
+      
+      if (isDestroyed) {
+        console.log('❌ Componente destruido')
+        return
+      }
+      
+      if (isResetting) {
+        console.log('❌ Reset en progreso')
         return
       }
 
       if (!window.turnstile) {
-        console.warn('Turnstile script no disponible')
+        console.warn('❌ Turnstile script no disponible')
         return
       }
 
+      console.log('✅ Todas las condiciones cumplidas, iniciando renderizado...')
       setIsRendering(true)
 
       try {
@@ -285,6 +314,7 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
           }
         })
         
+        console.log('✅ Widget renderizado exitosamente con ID:', id)
         setWidgetId(id)
         setIsRendering(false)
         
@@ -345,9 +375,44 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
     // Renderizar widget cuando el script esté listo
     useEffect(() => {
       if (isScriptLoaded && !widgetId && !isRendering && !isDestroyed && !isResetting && containerRef.current && siteKey) {
+        console.log('🎯 Intentando renderizar widget Turnstile...')
+        console.log('Estado actual:', {
+          isScriptLoaded,
+          widgetId,
+          isRendering,
+          isDestroyed,
+          isResetting,
+          hasContainer: !!containerRef.current,
+          hasSiteKey: !!siteKey,
+          turnstileAvailable: !!window.turnstile
+        })
         renderWidget()
       }
     }, [isScriptLoaded, widgetId, isRendering, isDestroyed, isResetting, siteKey])
+
+    // Verificar si el widget se renderizó correctamente después de un tiempo
+    useEffect(() => {
+      if (widgetId && containerRef.current) {
+        const checkWidget = setTimeout(() => {
+          const iframe = containerRef.current?.querySelector('iframe')
+          const hasIframe = !!iframe
+          const iframeSrc = iframe?.src || 'no-src'
+          
+          console.log('🔍 Verificación post-renderizado:', {
+            widgetId,
+            hasIframe,
+            iframeSrc: iframeSrc.substring(0, 100) + '...',
+            containerChildren: containerRef.current?.children.length || 0
+          })
+          
+          if (!hasIframe) {
+            console.warn('⚠️ Widget renderizado pero no se detecta iframe')
+          }
+        }, 2000)
+        
+        return () => clearTimeout(checkWidget)
+      }
+    }, [widgetId])
 
     // Cleanup al desmontar
     useEffect(() => {

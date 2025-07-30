@@ -83,7 +83,14 @@ Si tienes problemas con Turnstile en producción:
    NEXT_PUBLIC_SHOW_TURNSTILE_DEBUG=true
    ```
 
-4. **Consulta la guía completa:** [TURNSTILE_TROUBLESHOOTING.md](./TURNSTILE_TROUBLESHOOTING.md)
+4. **Usa las herramientas de debugging**:
+   - Busca el botón azul con icono de ojo en la esquina inferior derecha
+   - Abre las herramientas de desarrollador (F12) y revisa la consola
+   - Verifica los logs que empiecen con 🎯, 🔧, ✅
+
+5. **Consulta las guías completas**:
+   - [TURNSTILE_TROUBLESHOOTING.md](./TURNSTILE_TROUBLESHOOTING.md) - Guía general
+   - [TURNSTILE_RENDERING_DEBUG.md](./TURNSTILE_RENDERING_DEBUG.md) - Debugging específico de renderizado
 
 ### Problemas comunes:
 - Variables de entorno no configuradas

@@ -14,6 +14,7 @@ import { ArrowLeft, Heart, Send, Trash2, Download, Loader2 } from "lucide-react"
 import { useRealtime } from "@/hooks/use-realtime"
 import { Turnstile, type TurnstileRef } from "@/components/ui/turnstile"
 import { TurnstileDebug } from "@/components/ui/turnstile-debug"
+import { TurnstileDebugAdvanced } from "@/components/ui/turnstile-debug-advanced"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
 import { useToast } from "@/hooks/use-toast"
 import { useTurnstile } from "@/hooks/use-turnstile"
@@ -573,6 +574,9 @@ export default function MuralPage() {
               
               {/* Componente de diagnóstico para desarrollo */}
               <TurnstileDebug siteKey={siteKey} className="mt-4" />
+              
+              {/* Componente de debugging avanzado */}
+              <TurnstileDebugAdvanced siteKey={siteKey} />
               
               {turnstile.error && (
                 <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
