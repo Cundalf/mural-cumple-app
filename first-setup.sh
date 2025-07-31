@@ -24,9 +24,9 @@ echo "✅ Verificando permisos..."
 ls -la ./data/
 
 echo "🚀 Rebuilding contenedor..."
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
+docker compose down
+docker compose build --no-cache
+docker compose up -d
 
 echo "📊 Verificando contenedor..."
 sleep 5
