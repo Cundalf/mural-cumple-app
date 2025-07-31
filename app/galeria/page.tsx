@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
-import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle, DialogPortal, DialogOverlay } from "@/components/ui/dialog"
+import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { useRealtime } from "@/hooks/use-realtime"
 import { useToast } from "@/hooks/use-toast"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
@@ -27,6 +28,8 @@ export default function GaleriaPage() {
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null)
   const [currentMediaIndex, setCurrentMediaIndex] = useState<number>(0)
   const [isUploading, setIsUploading] = useState(false)
+  const [showLargeFileModal, setShowLargeFileModal] = useState(false)
+  const [largeFileInfo, setLargeFileInfo] = useState<{name: string, alternativeAlbum?: string} | null>(null)
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
   const { toast } = useToast()
@@ -143,11 +146,11 @@ export default function GaleriaPage() {
     
     for (let file of Array.from(files)) {
       if (file.size > maxSize) {
-        toast({
-          title: "Archivo muy grande",
-          description: `${file.name} supera el límite de 100MB`,
-          variant: "destructive",
+        setLargeFileInfo({
+          name: file.name,
+          alternativeAlbum: 'https://photos.cundalf.com.ar/share/x6G-iQWzctDRkp1765QO8uI7uROcGP3iob-zpHZTUNyiSnrGFC6vWxoP0pWYtamDcgc'
         })
+        setShowLargeFileModal(true)
         event.target.value = ""
         return
       }
@@ -186,6 +189,17 @@ export default function GaleriaPage() {
 
       if (!response.ok) {
         const errorData = await response.json()
+        
+        // Si es un error de archivo muy grande, mostrar modal especial
+        if (response.status === 413 && errorData.alternativeAlbum) {
+          setLargeFileInfo({
+            name: errorData.error.split(' ')[2] || 'Archivo', // Extraer nombre del archivo del mensaje
+            alternativeAlbum: errorData.alternativeAlbum
+          })
+          setShowLargeFileModal(true)
+          return
+        }
+        
         throw new Error(errorData.error || 'Error al subir archivos')
       }
       
@@ -501,10 +515,82 @@ export default function GaleriaPage() {
                   </CardContent>
                 </Card>
               </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
+                         )}
+           </>
+         )}
+
+         {/* Modal para archivos grandes */}
+         <Dialog open={showLargeFileModal} onOpenChange={setShowLargeFileModal}>
+           <DialogPortal>
+             <DialogOverlay />
+                           <DialogPrimitive.Content
+                className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-md translate-x-[-50%] translate-y-[-50%] border-0 shadow-2xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg bg-transparent"
+              >
+                <DialogTitle className="sr-only">
+                  Archivo muy grande - Información
+                </DialogTitle>
+             <div className="relative">
+               {/* Fondo decorativo */}
+               <div className="absolute inset-0 bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 rounded-lg"></div>
+               
+               {/* Contenido */}
+               <div className="relative p-8 text-center">
+                 {/* Icono */}
+                 <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-red-100 to-orange-100 rounded-full mb-6">
+                   <div className="relative">
+                     <ImageIcon className="w-10 h-10 text-red-600" />
+                     <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
+                       <span className="text-white text-xs font-bold">!</span>
+                     </div>
+                   </div>
+                 </div>
+
+                 {/* Título */}
+                 <h3 className="text-2xl font-bold text-gray-800 mb-4">
+                   Archivo muy grande
+                 </h3>
+
+                 {/* Mensaje */}
+                 <div className="space-y-3 mb-8">
+                   <p className="text-gray-600 text-lg">
+                     <span className="font-semibold text-gray-800">{largeFileInfo?.name}</span> supera el límite de 100MB
+                   </p>
+                   <p className="text-gray-500 text-sm">
+                     Para archivos grandes, por favor súbelos al álbum alternativo
+                   </p>
+                 </div>
+
+                 {/* Botones */}
+                 <div className="flex flex-col gap-3">
+                   <Button 
+                     onClick={() => {
+                       if (largeFileInfo?.alternativeAlbum) {
+                         window.open(largeFileInfo.alternativeAlbum, '_blank')
+                       }
+                       setShowLargeFileModal(false)
+                     }}
+                     className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
+                   >
+                     <ImageIcon className="w-5 h-5 mr-2" />
+                     Ir al álbum para archivos grandes
+                   </Button>
+                   
+                   <Button 
+                     variant="outline"
+                     onClick={() => setShowLargeFileModal(false)}
+                     className="border-gray-300 text-gray-600 hover:bg-gray-50 font-medium py-2 px-4 rounded-lg"
+                   >
+                     Cerrar
+                   </Button>
+                 </div>
+               </div>
+
+               
+             </div>
+             </DialogPrimitive.Content>
+           </DialogPortal>
+         </Dialog>
+       </div>
+     </div>
+   )
+ }

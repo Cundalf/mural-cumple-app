@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
       for (const file of files) {
         if (file.size > maxSize) {
           return NextResponse.json({ 
-            error: `El archivo ${file.name} es demasiado grande. Tamaño máximo: 100MB` 
+            error: `El archivo ${file.name} es demasiado grande. Tamaño máximo: 100MB`,
+            alternativeAlbum: "https://photos.cundalf.com.ar/share/x6G-iQWzctDRkp1765QO8uI7uROcGP3iob-zpHZTUNyiSnrGFC6vWxoP0pWYtamDcgc"
           }, { status: 413 });
         }
         
