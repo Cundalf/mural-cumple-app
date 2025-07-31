@@ -32,58 +32,28 @@ html {
             src="https://challenges.cloudflare.com/turnstile/v0/api.js" 
             async 
             defer
+            onLoad={() => {
+              if (typeof window !== 'undefined') {
+                window.turnstileState = 'loaded';
+                console.log('✅ Turnstile script cargado exitosamente');
+                window.dispatchEvent(new CustomEvent('turnstileLoaded'));
+              }
+            }}
+            onError={() => {
+              if (typeof window !== 'undefined') {
+                window.turnstileState = 'error';
+                console.error('❌ Error cargando Turnstile script');
+                window.dispatchEvent(new CustomEvent('turnstileError'));
+              }
+            }}
           />
         )}
-        {/* Error handler para scripts externos */}
+        {/* Estado inicial de Turnstile */}
         <script dangerouslySetInnerHTML={{
           __html: `
-            // Estado global para Turnstile
-            window.turnstileState = 'unloaded';
-            
-            // Función global para manejar la carga de Turnstile
-            window.onTurnstileLoaded = function() {
-              window.turnstileState = 'loaded';
-              console.log('✅ Turnstile script cargado exitosamente');
-              
-              // Disparar evento personalizado para notificar a los componentes
-              window.dispatchEvent(new CustomEvent('turnstileLoaded'));
-            };
-            
-            // Función para manejar errores de Turnstile
-            window.onTurnstileError = function() {
-              window.turnstileState = 'error';
-              console.error('❌ Error cargando Turnstile script');
-              
-              // Disparar evento personalizado para notificar a los componentes
-              window.dispatchEvent(new CustomEvent('turnstileError'));
-            };
-            
-            // Configurar el script con callbacks
             if (typeof window !== 'undefined') {
-              const script = document.querySelector('script[src*="turnstile"]');
-              if (script) {
-                script.onload = window.onTurnstileLoaded;
-                script.onerror = function(e) {
-                  console.error('Error cargando Turnstile script:', e);
-                  window.onTurnstileError();
-                };
-              }
+              window.turnstileState = 'unloaded';
             }
-            
-            window.addEventListener('error', function(e) {
-              // Silenciar errores de share-modal.js y otros scripts externos
-              if (e.filename && (e.filename.includes('share-modal') || e.filename.includes('extension'))) {
-                e.preventDefault();
-                return true;
-              }
-            });
-            
-            // Manejar errores de extensiones o scripts inyectados
-            window.addEventListener('unhandledrejection', function(e) {
-              if (e.reason && e.reason.message && e.reason.message.includes('share-modal')) {
-                e.preventDefault();
-              }
-            });
           `
         }} />
       </head>

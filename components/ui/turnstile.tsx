@@ -306,46 +306,56 @@ const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
     useEffect(() => {
       if (typeof window === 'undefined' || isDestroyed) return
 
-      // Verificar si el script ya está cargado
-      if (window.turnstileState === 'loaded' && window.turnstile) {
+      // Función para verificar si Turnstile está listo
+      const checkTurnstileReady = () => {
+        return window.turnstile && window.turnstile.render
+      }
+
+      // Verificar si ya está cargado
+      if (checkTurnstileReady()) {
         setIsScriptLoaded(true)
         return
       }
 
-      // Verificar si hay un script existente
-      const existingScript = document.querySelector('script[src*="turnstile"]')
-      if (existingScript && window.turnstile) {
-        setIsScriptLoaded(true)
-        return
+      // Escuchar eventos de carga
+      const handleTurnstileLoaded = () => {
+        if (checkTurnstileReady()) {
+          setIsScriptLoaded(true)
+          setScriptError(null)
+        }
       }
 
-      // Si el script está cargándose, esperar
-      if (window.turnstileState === 'loading') {
-        const checkInterval = setInterval(() => {
-          if (window.turnstileState === 'loaded' && window.turnstile) {
-            setIsScriptLoaded(true)
-            clearInterval(checkInterval)
-          } else if (window.turnstileState === 'error') {
-            setScriptError('Error al cargar el script de verificación')
-            clearInterval(checkInterval)
-          }
-        }, 100)
-        
-        return () => clearInterval(checkInterval)
+      const handleTurnstileError = () => {
+        setScriptError('Error al cargar el script de verificación')
+        onError?.('Error al cargar el script de verificación')
       }
 
-      // Si no hay script y no está cargándose, configurar timeout
-      if (!existingScript && !window.turnstileState) {
-        scriptTimeoutRef.current = setTimeout(() => {
-          if (!window.turnstile) {
-            setScriptError('Tiempo de espera agotado al cargar la verificación')
-            onError?.('Tiempo de espera agotado al cargar la verificación')
-          }
-        }, SCRIPT_LOAD_TIMEOUT)
-      }
+      // Verificar periódicamente si el script se cargó
+      const checkInterval = setInterval(() => {
+        if (checkTurnstileReady()) {
+          setIsScriptLoaded(true)
+          clearInterval(checkInterval)
+        }
+      }, 100)
+
+      // Configurar timeout
+      scriptTimeoutRef.current = setTimeout(() => {
+        if (!checkTurnstileReady()) {
+          setScriptError('Tiempo de espera agotado al cargar la verificación')
+          onError?.('Tiempo de espera agotado al cargar la verificación')
+        }
+        clearInterval(checkInterval)
+      }, SCRIPT_LOAD_TIMEOUT)
+
+      // Escuchar eventos personalizados
+      window.addEventListener('turnstileLoaded', handleTurnstileLoaded)
+      window.addEventListener('turnstileError', handleTurnstileError)
 
       return () => {
+        clearInterval(checkInterval)
         cleanup()
+        window.removeEventListener('turnstileLoaded', handleTurnstileLoaded)
+        window.removeEventListener('turnstileError', handleTurnstileError)
       }
     }, [isDestroyed, onError, cleanup])
 
