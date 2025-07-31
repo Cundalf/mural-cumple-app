@@ -6,35 +6,6 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import { emitMediaUploaded } from '@/lib/events';
 
-// Función para verificar Turnstile
-async function verifyTurnstile(token: string): Promise<boolean> {
-  // Si Turnstile está deshabilitado, siempre retornar true
-  if (process.env.DISABLE_TURNSTILE === 'true') {
-
-    return true;
-  }
-
-  try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        secret: process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY,
-        response: token,
-      }),
-    });
-
-    const data = await response.json();
-    
-    return data.success === true;
-  } catch (error) {
-    console.error('Error al verificar Turnstile:', error);
-    return false;
-  }
-}
-
 // Configurar límite de tamaño para archivos grandes
 export const maxDuration = 300; // 5 minutos para procesar archivos grandes
 
@@ -42,19 +13,6 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.formData();
     const files = data.getAll('files') as File[];
-    const turnstileToken = data.get('turnstileToken') as string;
-
-    // Verificar Turnstile solo si no está deshabilitado
-    if (process.env.DISABLE_TURNSTILE !== 'true') {
-      if (!turnstileToken) {
-        return NextResponse.json({ error: 'Token de verificación requerido' }, { status: 400 });
-      }
-
-      const isTurnstileValid = await verifyTurnstile(turnstileToken);
-      if (!isTurnstileValid) {
-        return NextResponse.json({ error: 'Verificación de seguridad fallida' }, { status: 403 });
-      }
-    }
 
     if (!files || files.length === 0) {
       return NextResponse.json({ error: 'No se encontraron archivos' }, { status: 400 });

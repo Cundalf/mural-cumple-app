@@ -11,12 +11,8 @@ import { Input } from "@/components/ui/input"
 import { ArrowLeft, Upload, ImageIcon, Video, X, Trash2, Loader2, ChevronLeft, ChevronRight } from "lucide-react"
 import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "@/components/ui/dialog"
 import { useRealtime } from "@/hooks/use-realtime"
-import { Turnstile, type TurnstileRef } from "@/components/ui/turnstile"
-import { TurnstileDebug } from "@/components/ui/turnstile-debug"
-import { TurnstileDebugAdvanced } from "@/components/ui/turnstile-debug-advanced"
 import { useToast } from "@/hooks/use-toast"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
-import { useTurnstile } from "@/hooks/use-turnstile"
 
 interface MediaItem {
   id: string
@@ -27,7 +23,6 @@ interface MediaItem {
 }
 
 export default function GaleriaPage() {
-  const siteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null)
   const [currentMediaIndex, setCurrentMediaIndex] = useState<number>(0)
   const [isUploading, setIsUploading] = useState(false)
@@ -35,15 +30,7 @@ export default function GaleriaPage() {
   const isAdmin = searchParams.get("admin") === "true"
   const { toast } = useToast()
   
-  const isTurnstileDisabled = process.env.NEXT_PUBLIC_DISABLE_TURNSTILE === 'true'
-  
-  const turnstile = useTurnstile({
-    siteKey,
-    disabled: isTurnstileDisabled,
-    reuseTokenDuration: 10 * 60 * 1000, // 10 minutos para uploads
-    autoResetOnError: true,
-    maxRetries: 3
-  })
+
   
 
 
@@ -140,19 +127,6 @@ export default function GaleriaPage() {
       return
     }
 
-    // Obtener token válido (reutilizable si aún es válido)
-    const token = isTurnstileDisabled ? null : turnstile.getToken()
-    
-    if (!isTurnstileDisabled && !token) {
-        toast({
-            title: "Verificación requerida",
-            description: "Por favor, completa la verificación para poder subir archivos.",
-            variant: "destructive",
-        })
-        event.target.value = ""
-        return
-    }
-
     const maxSize = 100 * 1024 * 1024 // 100MB
     const allowedTypes = ['image/', 'video/']
     
@@ -187,10 +161,6 @@ export default function GaleriaPage() {
         formData.append('files', files[i])
       }
 
-      if (token) {
-        formData.append('turnstileToken', token)
-      }
-
       const response = await fetch('/api/media/upload', {
         method: 'POST',
         body: formData,
@@ -200,9 +170,6 @@ export default function GaleriaPage() {
         const errorData = await response.json()
         throw new Error(errorData.message || 'Error al subir archivos')
       }
-
-      // No resetear inmediatamente para permitir reutilización del token
-      // El token se reutilizará automáticamente durante su período de validez
       
       toast({
         title: "¡Archivos subidos!",
@@ -307,89 +274,18 @@ export default function GaleriaPage() {
                   accept="image/*,video/*"
                   onChange={handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  disabled={isUploading || (!isTurnstileDisabled && !turnstile.isTokenValid)}
+                  disabled={isUploading}
                 />
-                <div className={`border-2 border-dashed rounded-lg p-8 transition-colors ${
-                  isTurnstileDisabled || turnstile.isTokenValid 
-                    ? 'border-blue-300 hover:border-blue-400 bg-blue-50/50 hover:bg-blue-100/50' 
-                    : 'border-gray-300 bg-gray-50/50'
-                }`}>
+                <div className="border-2 border-dashed rounded-lg p-8 transition-colors border-blue-300 hover:border-blue-400 bg-blue-50/50 hover:bg-blue-100/50">
                   <div className="flex flex-col items-center">
-                    <Upload className={`w-12 h-12 mb-4 ${
-                      isTurnstileDisabled || turnstile.isTokenValid ? 'text-blue-500' : 'text-gray-400'
-                    }`} />
-                    <p className={`text-xl font-semibold mb-2 ${
-                      isTurnstileDisabled || turnstile.isTokenValid ? 'text-blue-700' : 'text-gray-500'
-                    }`}>
-                      {isUploading ? "Subiendo archivos..." : 
-                       isTurnstileDisabled ? "Toca aquí para seleccionar" :
-                       turnstile.isTokenValid ? "Toca aquí para seleccionar" : "Completa la verificación primero"}
+                    <Upload className="w-12 h-12 mb-4 text-blue-500" />
+                    <p className="text-xl font-semibold mb-2 text-blue-700">
+                      {isUploading ? "Subiendo archivos..." : "Toca aquí para seleccionar"}
                     </p>
-                    <p className={`text-lg ${
-                      isTurnstileDisabled || turnstile.isTokenValid ? 'text-blue-600' : 'text-gray-400'
-                    }`}>Fotos y videos</p>
+                    <p className="text-lg text-blue-600">Fotos y videos</p>
                   </div>
                 </div>
               </div>
-              
-              {!isTurnstileDisabled && (
-                  <div className="flex justify-center mt-6">
-                    <Turnstile
-                        ref={turnstile.turnstileRef}
-                        siteKey={siteKey}
-                        onVerify={turnstile.handleVerify}
-                        onError={turnstile.handleError}
-                        onExpire={turnstile.handleExpire}
-                        theme="light"
-                        size="normal"
-                        autoResetOnError={true}
-                        maxRetries={3}
-                    />
-                  </div>
-              )}
-              
-              {/* Componente de diagnóstico para desarrollo */}
-              <TurnstileDebug siteKey={siteKey} className="mt-4" />
-              
-              {/* Componente de debugging avanzado */}
-              <TurnstileDebugAdvanced siteKey={siteKey} />
-              
-              {turnstile.error && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-red-600">⚠️</span>
-                      <span className="text-sm text-red-700">{turnstile.error}</span>
-                    </div>
-                    {(turnstile.error.includes('Reintentando') || turnstile.error.includes('Error')) && (
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => {
-                            console.log('🔄 Usuario presionó Reiniciar')
-                            turnstile.reset()
-                          }}
-                          variant="outline"
-                          size="sm"
-                          className="text-xs border-red-300 text-red-700 hover:bg-red-100 font-medium"
-                        >
-                          🔄 Reiniciar
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            console.log('🔄 Recargando página como fallback')
-                            window.location.reload()
-                          }}
-                          variant="outline"
-                          size="sm"
-                          className="text-xs border-gray-300 text-gray-700 hover:bg-gray-100"
-                        >
-                          ↻ Recargar
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>

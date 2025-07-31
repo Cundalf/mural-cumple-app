@@ -12,12 +12,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ArrowLeft, Heart, Send, Trash2, Download, Loader2 } from "lucide-react"
 import { useRealtime } from "@/hooks/use-realtime"
-import { Turnstile, type TurnstileRef } from "@/components/ui/turnstile"
-import { TurnstileDebug } from "@/components/ui/turnstile-debug"
-import { TurnstileDebugAdvanced } from "@/components/ui/turnstile-debug-advanced"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
 import { useToast } from "@/hooks/use-toast"
-import { useTurnstile } from "@/hooks/use-turnstile"
 
 interface Message {
   id: string
@@ -47,7 +43,6 @@ const colors = [
 ]
 
 export default function MuralPage() {
-  const siteKey = process.env.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY || ''
   const [newMessage, setNewMessage] = useState("")
   const [authorName, setAuthorName] = useState("")
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
@@ -56,16 +51,6 @@ export default function MuralPage() {
   const isAdmin = searchParams.get("admin") === "true"
   const { toast } = useToast()
   
-  const isTurnstileDisabled = process.env.NEXT_PUBLIC_DISABLE_TURNSTILE === 'true'
-  
-  const turnstile = useTurnstile({
-    siteKey,
-    disabled: isTurnstileDisabled,
-    reuseTokenDuration: 5 * 60 * 1000, // 5 minutos para mensajes
-    autoResetOnError: true,
-    maxRetries: 3
-  })
-
   const {
     items: messages,
     isLoading,
@@ -139,18 +124,6 @@ export default function MuralPage() {
       return
     }
     
-    // Obtener token válido (reutilizable si aún es válido)
-    const token = isTurnstileDisabled ? null : turnstile.getToken()
-    
-    if (!isTurnstileDisabled && !token) {
-        toast({
-            title: "Verificación requerida",
-            description: "Por favor, completa la verificación para continuar.",
-            variant: "destructive",
-        })
-        return
-    }
-
     setIsSubmitting(true)
 
     try {
@@ -165,16 +138,12 @@ export default function MuralPage() {
           text: newMessage.trim(),
           author: authorName.trim(),
           color,
-          turnstileToken: token,
         }),
       })
 
       if (response.ok) {
         setNewMessage("")
         setAuthorName("")
-        
-        // No resetear inmediatamente para permitir reutilizar el token
-        // El token se reutilizará automáticamente durante su período de validez
         
         toast({
             title: "¡Mensaje enviado!",
@@ -555,43 +524,11 @@ export default function MuralPage() {
                 <p className="text-sm text-gray-500 mt-2">{newMessage.length}/200 caracteres</p>
               </div>
 
-              {!isTurnstileDisabled && (
-                <div className="flex justify-center">
-                  <Turnstile
-                    ref={turnstile.turnstileRef}
-                    siteKey={siteKey}
-                    onVerify={turnstile.handleVerify}
-                    onError={turnstile.handleError}
-                    onExpire={turnstile.handleExpire}
-                    theme="light"
-                    size="normal"
-                    autoResetOnError={true}
-                    maxRetries={3}
-                    className="mt-4"
-                  />
-                </div>
-              )}
-              
-              {/* Componente de diagnóstico para desarrollo */}
-              <TurnstileDebug siteKey={siteKey} className="mt-4" />
-              
-              {/* Componente de debugging avanzado */}
-              <TurnstileDebugAdvanced siteKey={siteKey} />
-              
-              {turnstile.error && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <span className="text-red-600">⚠️</span>
-                    <span className="text-sm text-red-700">{turnstile.error}</span>
-                  </div>
-                </div>
-              )}
-
               <Button
                 type="submit"
                 size="lg"
                 className="w-full bg-yellow-500 hover:bg-yellow-600 text-white py-4 text-lg rounded-full"
-                disabled={!newMessage.trim() || !authorName.trim() || (!isTurnstileDisabled && !turnstile.isTokenValid) || isSubmitting}
+                disabled={!newMessage.trim() || !authorName.trim() || isSubmitting}
               >
                 <Send className="w-5 h-5 mr-2" />
                 {isSubmitting ? "Enviando..." : "Enviar Mensaje"}

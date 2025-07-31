@@ -39,52 +39,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Función para validar token de Turnstile
-async function validateTurnstileToken(token: string): Promise<boolean> {
-  // Si Turnstile está deshabilitado, siempre retornar true
-  if (process.env.DISABLE_TURNSTILE === 'true') {
-    return true;
-  }
-
-  try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        secret: process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY,
-        response: token,
-      }),
-    });
-
-    const data = await response.json();
-    return data.success === true;
-  } catch (error) {
-    console.error('Error validando Turnstile:', error);
-    return false;
-  }
-}
-
 // POST - Crear un nuevo mensaje
 export async function POST(request: NextRequest) {
   try {
-    const { text, author, color, turnstileToken } = await request.json();
+    const { text, author, color } = await request.json();
 
     if (!text || !author || !color) {
       return NextResponse.json({ error: 'Faltan campos requeridos' }, { status: 400 });
-    }
-
-    // Validar token de Turnstile solo si no está deshabilitado
-    if (process.env.DISABLE_TURNSTILE !== 'true') {
-      if (!turnstileToken) {
-        return NextResponse.json({ error: 'Token de verificación requerido' }, { status: 400 });
-      }
-      
-      const isValidToken = await validateTurnstileToken(turnstileToken);
-      if (!isValidToken) {
-        return NextResponse.json({ error: 'Verificación de seguridad fallida' }, { status: 400 });
-      }
     }
 
     const id = uuidv4();
