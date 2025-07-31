@@ -10,9 +10,16 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - HOSTNAME=0.0.0.0
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3000}
+      - HOSTNAME=${HOSTNAME:-0.0.0.0}
+      # Google reCAPTCHA v3 - CONFIGURAR CON TUS CLAVES REALES
+      - NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${NEXT_PUBLIC_RECAPTCHA_SITE_KEY}
+      - RECAPTCHA_SECRET_KEY=${RECAPTCHA_SECRET_KEY}
+      - RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY}
+      # Bypass temporal (SOLO para emergencias)
+      - NEXT_PUBLIC_RECAPTCHA_BYPASS=${NEXT_PUBLIC_RECAPTCHA_BYPASS:-false}
+      - RECAPTCHA_BYPASS=${RECAPTCHA_BYPASS:-false}
     volumes:
       # Persistencia de la base de datos SQLite
       - ./data/db:/app/db
