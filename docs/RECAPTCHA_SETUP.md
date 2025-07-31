@@ -30,6 +30,12 @@ Crea o actualiza tu archivo `.env.local`:
 RECAPTCHA_SITE_KEY=tu_clave_del_sitio_aqui
 RECAPTCHA_SECRET_KEY=tu_clave_secreta_aqui
 NEXT_PUBLIC_RECAPTCHA_SITE_KEY=tu_clave_del_sitio_aqui
+
+# Bypass de reCAPTCHA (SOLO para desarrollo/emergencias)
+# ⚠️ ADVERTENCIA: Solo usar en desarrollo o situaciones de emergencia
+# ⚠️ NUNCA usar en producción
+RECAPTCHA_BYPASS=false
+NEXT_PUBLIC_RECAPTCHA_BYPASS=false
 ```
 
 **Nota:** `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` es necesaria para el frontend.
@@ -196,6 +202,61 @@ reCAPTCHA score: 0.9 (threshold: 0.5)
 2. **Usa HTTPS** en producción
 3. **Monitorea los scores** para ajustar umbrales
 4. **Considera rate limiting** adicional si es necesario
+
+## Bypass de reCAPTCHA
+
+### 🚨 **Uso de Emergencia**
+
+En situaciones de emergencia o desarrollo, puedes deshabilitar temporalmente reCAPTCHA:
+
+```env
+# Deshabilitar reCAPTCHA temporalmente
+RECAPTCHA_BYPASS=true
+NEXT_PUBLIC_RECAPTCHA_BYPASS=true
+```
+
+### ⚠️ **Advertencias Importantes**
+
+1. **NUNCA usar en producción** - Esto deshabilita toda la protección
+2. **Solo para desarrollo/debugging** - Usar únicamente cuando sea necesario
+3. **Revisar logs** - Verás advertencias cuando el bypass esté activo
+4. **Restaurar inmediatamente** - Volver a `false` después de resolver el problema
+
+### 🔍 **Cómo Funciona**
+
+- **Backend**: El middleware detecta `RECAPTCHA_BYPASS=true` y salta la validación
+- **Frontend**: El provider detecta `NEXT_PUBLIC_RECAPTCHA_BYPASS=true` y retorna tokens simulados
+- **Logs**: Verás advertencias en la consola cuando el bypass esté activo
+
+### 📝 **Ejemplo de Uso**
+
+#### **Opción 1: Script Automático (Recomendado)**
+```bash
+# Habilitar bypass
+node scripts/toggle-recaptcha-bypass.js enable
+
+# Ver estado actual
+node scripts/toggle-recaptcha-bypass.js status
+
+# Deshabilitar bypass
+node scripts/toggle-recaptcha-bypass.js disable
+```
+
+#### **Opción 2: Manual**
+```bash
+# 1. Habilitar bypass
+echo "RECAPTCHA_BYPASS=true" >> .env.local
+echo "NEXT_PUBLIC_RECAPTCHA_BYPASS=true" >> .env.local
+
+# 2. Reiniciar servidor
+npm run dev
+
+# 3. Usar la aplicación normalmente (sin reCAPTCHA)
+
+# 4. Deshabilitar bypass cuando termines
+echo "RECAPTCHA_BYPASS=false" >> .env.local
+echo "NEXT_PUBLIC_RECAPTCHA_BYPASS=false" >> .env.local
+```
 
 ## Troubleshooting
 

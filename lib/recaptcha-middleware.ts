@@ -14,6 +14,13 @@ export async function withRecaptcha(
 ): Promise<NextResponse> {
   const { action, threshold = 0.5, required = true } = options;
 
+  // Verificar si el bypass está habilitado
+  const bypassEnabled = process.env.RECAPTCHA_BYPASS === 'true';
+  if (bypassEnabled) {
+    console.warn('⚠️  RECAPTCHA_BYPASS habilitado. reCAPTCHA deshabilitado para esta petición.');
+    return await handler(request);
+  }
+
   // Verificar si reCAPTCHA está configurado
   const isRecaptchaConfigured = !!process.env.RECAPTCHA_SECRET_KEY;
 

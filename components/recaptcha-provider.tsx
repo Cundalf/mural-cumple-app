@@ -74,6 +74,13 @@ export function RecaptchaProvider({ children, siteKey }: RecaptchaProviderProps)
   }, [siteKey]);
 
   const execute = async (action: string): Promise<string> => {
+    // Verificar si el bypass está habilitado
+    const bypassEnabled = process.env.NEXT_PUBLIC_RECAPTCHA_BYPASS === 'true';
+    if (bypassEnabled) {
+      console.warn('⚠️  RECAPTCHA_BYPASS habilitado. Retornando token simulado.');
+      return 'bypass-token-' + Date.now();
+    }
+
     if (!grecaptcha || !isLoaded) {
       throw new Error('reCAPTCHA no está cargado');
     }
