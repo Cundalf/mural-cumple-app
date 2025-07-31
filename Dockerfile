@@ -16,10 +16,21 @@ RUN npm ci --only=development --prefer-offline --no-audit
 
 # Stage 2: Build de la aplicación
 FROM base AS builder
+
+# IMPORTANTE: Definir ARGs para recibir variables de entorno en build time
+ARG NEXT_PUBLIC_RECAPTCHA_SITE_KEY
+ARG NEXT_PUBLIC_RECAPTCHA_BYPASS
+ARG NODE_ENV
+
+# Convertir ARGs a ENVs para que estén disponibles durante el build
+ENV NEXT_PUBLIC_RECAPTCHA_SITE_KEY=$NEXT_PUBLIC_RECAPTCHA_SITE_KEY
+ENV NEXT_PUBLIC_RECAPTCHA_BYPASS=$NEXT_PUBLIC_RECAPTCHA_BYPASS
+ENV NODE_ENV=$NODE_ENV
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Construir la aplicación
+# Construir la aplicación con las variables disponibles
 RUN npm run build
 
 # Stage 3: Imagen de producción ultra ligera
@@ -70,4 +81,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
 # Comando de inicio
-CMD ["node", "server.js"] 
+CMD ["node", "server.js"]
