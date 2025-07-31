@@ -230,19 +230,6 @@ NEXT_PUBLIC_RECAPTCHA_BYPASS=true
 
 ### 📝 **Ejemplo de Uso**
 
-#### **Opción 1: Script Automático (Recomendado)**
-```bash
-# Habilitar bypass
-node scripts/toggle-recaptcha-bypass.js enable
-
-# Ver estado actual
-node scripts/toggle-recaptcha-bypass.js status
-
-# Deshabilitar bypass
-node scripts/toggle-recaptcha-bypass.js disable
-```
-
-#### **Opción 2: Manual**
 ```bash
 # 1. Habilitar bypass
 echo "RECAPTCHA_BYPASS=true" >> .env.local
@@ -303,19 +290,15 @@ Para mejor funcionamiento, obtén claves reales siguiendo la guía en `docs/RECA
 
 ## 🔧 **Gestión de Umbrales**
 
-### **Cambiar Umbrales Automáticamente**
-```bash
-# Para desarrollo (umbral bajo)
-node scripts/update-thresholds.js development
-
-# Para producción (umbral estándar)
-node scripts/update-thresholds.js production
-
-# Ver umbrales actuales
-node scripts/update-thresholds.js show
-```
-
 ### **Umbrales por Entorno**
 - **Desarrollo**: 0.1 (permite más actividad)
 - **Producción**: 0.5 (protección estándar)
-- **Alta Seguridad**: 0.7 (protección estricta) 
+- **Alta Seguridad**: 0.7 (protección estricta)
+
+### **Cambiar Umbrales Manualmente**
+Edita directamente los archivos de endpoints:
+- `app/api/messages/route.ts`
+- `app/api/media/upload/route.ts`
+- `app/api/media/route.ts`
+
+Cambia el valor de `threshold` según necesites. 
