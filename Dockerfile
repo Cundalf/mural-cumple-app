@@ -71,6 +71,10 @@ RUN mkdir -p /app/db /app/uploads \
     && chown -R nextjs:nodejs /app/db /app/uploads \
     && chmod 755 /app/db /app/uploads
 
+# IMPORTANTE: Asegurar que nextjs tenga permisos de escritura
+RUN chmod 775 /app/uploads \
+    && chown nextjs:nodejs /app/uploads
+
 # Cambiar al usuario no-root
 USER nextjs
 

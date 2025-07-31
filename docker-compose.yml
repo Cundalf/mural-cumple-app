@@ -30,8 +30,8 @@ services:
     volumes:
       # Persistencia de la base de datos SQLite
       - ./data/db:/app/db
-      # Persistencia de archivos subidos
-      - ./data/uploads:/app/uploads
+      # Persistencia de archivos subidos con permisos correctos
+      - ./data/uploads:/app/uploads:Z
     networks:
       - caddy_network
     healthcheck:
