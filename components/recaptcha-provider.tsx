@@ -123,36 +123,36 @@ export function useRecaptcha() {
 export function useRecaptchaRequest() {
   const { execute, isLoaded } = useRecaptcha();
 
-  const makeRequest = async <T>(
+  const makeRequest = function<T>(
     url: string,
     options: {
       method?: string;
       body?: any;
       action: string;
     }
-  ): Promise<T> => {
+  ): Promise<T> {
     if (!isLoaded) {
-      throw new Error('reCAPTCHA no está cargado');
+      return Promise.reject(new Error('reCAPTCHA no está cargado'));
     }
 
-    const token = await execute(options.action);
-
-    const response = await fetch(url, {
-      method: options.method || 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'X-Recaptcha-Token': token
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined
+    return execute(options.action).then(token => {
+      return fetch(url, {
+        method: options.method || 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Recaptcha-Token': token
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined
+      }).then(response => {
+        if (!response.ok) {
+          return response.json().then(errorData => {
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+          });
+        }
+        return response.json();
+      });
     });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-    }
-
-    return response.json();
   };
 
   return { makeRequest, isLoaded };

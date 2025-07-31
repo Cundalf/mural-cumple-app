@@ -78,7 +78,7 @@ export async function withRecaptcha(
     console.error('Error en middleware de reCAPTCHA:', error);
     
     // En caso de error de configuración, permitir continuar sin reCAPTCHA
-    if (error.message.includes('no está configurada')) {
+    if (error instanceof Error && error.message.includes('no está configurada')) {
       console.warn('reCAPTCHA no configurado, continuando sin validación');
       return await handler(request);
     }
