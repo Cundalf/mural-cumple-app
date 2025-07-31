@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # Caddy Reverse Proxy
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+      - ./caddy/logs:/var/log/caddy
+    networks:
+      - app_network
+    depends_on:
+      - mural-cumple-app
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Aplicación Next.js
+  mural-cumple-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${NEXT_PUBLIC_RECAPTCHA_SITE_KEY}
+        - NEXT_PUBLIC_RECAPTCHA_BYPASS=${NEXT_PUBLIC_RECAPTCHA_BYPASS:-false}
+        - NODE_ENV=${NODE_ENV:-production}
+        - RECAPTCHA_SECRET_KEY=${RECAPTCHA_SECRET_KEY}
+        - RECAPTCHA_BYPASS=${RECAPTCHA_BYPASS:-false}
+    container_name: mural-cumple-app
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3000}
+      - HOSTNAME=${HOSTNAME:-0.0.0.0}
+      # Google reCAPTCHA v3
+      - NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${NEXT_PUBLIC_RECAPTCHA_SITE_KEY}
+      - RECAPTCHA_SECRET_KEY=${RECAPTCHA_SECRET_KEY}
+      - RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY}
+      # Bypass temporal (SOLO para emergencias)
+      - NEXT_PUBLIC_RECAPTCHA_BYPASS=${NEXT_PUBLIC_RECAPTCHA_BYPASS:-false}
+      - RECAPTCHA_BYPASS=${RECAPTCHA_BYPASS:-false}
+    volumes:
+      # Persistencia de la base de datos SQLite
+      - ./data/db:/app/db
+      # Persistencia de archivos subidos
+      - ./data/uploads:/app/uploads
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  app_network:
+    driver: bridge
+    name: app_network
