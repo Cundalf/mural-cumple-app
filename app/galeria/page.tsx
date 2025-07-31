@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogTrigger, DialogClose, DialogTitle } from "
 import { useRealtime } from "@/hooks/use-realtime"
 import { useToast } from "@/hooks/use-toast"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
+import { useRecaptcha } from "@/components/recaptcha-provider"
 
 interface MediaItem {
   id: string
@@ -29,6 +30,7 @@ export default function GaleriaPage() {
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
   const { toast } = useToast()
+  const { execute, isLoaded: isRecaptchaLoaded } = useRecaptcha()
   
 
   
@@ -127,6 +129,15 @@ export default function GaleriaPage() {
       return
     }
 
+    if (!isRecaptchaLoaded) {
+      toast({
+        title: "Error",
+        description: "reCAPTCHA no está cargado. Por favor, recarga la página.",
+        variant: "destructive",
+      })
+      return
+    }
+
     const maxSize = 100 * 1024 * 1024 // 100MB
     const allowedTypes = ['image/', 'video/']
     
@@ -155,6 +166,9 @@ export default function GaleriaPage() {
     setIsUploading(true)
 
     try {
+      // Obtener token de reCAPTCHA
+      const token = await execute('upload_media')
+      
       const formData = new FormData()
       
       for (let i = 0; i < files.length; i++) {
@@ -163,12 +177,16 @@ export default function GaleriaPage() {
 
       const response = await fetch('/api/media/upload', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-Recaptcha-Token': token
+        },
         body: formData,
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.message || 'Error al subir archivos')
+        throw new Error(errorData.error || 'Error al subir archivos')
       }
       
       toast({
@@ -194,18 +212,40 @@ export default function GaleriaPage() {
   const deleteMedia = async (id: string) => {
     if (!id) return;
     
+    if (!isRecaptchaLoaded) {
+      toast({
+        title: "Error",
+        description: "reCAPTCHA no está cargado. Por favor, recarga la página.",
+        variant: "destructive",
+      })
+      return
+    }
+    
     try {
+      // Obtener token de reCAPTCHA
+      const token = await execute('delete_media')
+      
       const response = await fetch(`/api/media?id=${id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-Recaptcha-Token': token
+        }
       });
 
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
       }
 
     } catch (error) {
-      console.error('Error al eliminar archivo:', error);
-      alert('Error al eliminar el archivo. Por favor intenta de nuevo.');
+      console.error('Error al eliminar archivo:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Error al eliminar el archivo. Por favor intenta de nuevo.'
+      toast({
+        title: "Error al eliminar archivo",
+        description: errorMessage,
+        variant: "destructive",
+      })
     }
   }
 

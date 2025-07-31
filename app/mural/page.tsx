@@ -14,6 +14,7 @@ import { ArrowLeft, Heart, Send, Trash2, Download, Loader2 } from "lucide-react"
 import { useRealtime } from "@/hooks/use-realtime"
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll"
 import { useToast } from "@/hooks/use-toast"
+import { useRecaptcha } from "@/components/recaptcha-provider"
 
 interface Message {
   id: string
@@ -50,6 +51,7 @@ export default function MuralPage() {
   const searchParams = useSearchParams()
   const isAdmin = searchParams.get("admin") === "true"
   const { toast } = useToast()
+  const { execute, isLoaded: isRecaptchaLoaded } = useRecaptcha()
   
   const {
     items: messages,
@@ -123,16 +125,30 @@ export default function MuralPage() {
     if (isSubmitting) {
       return
     }
+
+    if (!isRecaptchaLoaded) {
+      toast({
+        title: "Error",
+        description: "reCAPTCHA no está cargado. Por favor, recarga la página.",
+        variant: "destructive",
+      })
+      return
+    }
     
     setIsSubmitting(true)
 
     try {
+      // Obtener token de reCAPTCHA
+      const token = await execute('create_message')
+      
       const color = colors[Math.floor(Math.random() * colors.length)]
 
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Recaptcha-Token': token
         },
         body: JSON.stringify({
           text: newMessage.trim(),
@@ -151,7 +167,7 @@ export default function MuralPage() {
         })
       } else {
         const errorData = await response.json()
-        throw new Error(errorData.message || 'Error al enviar mensaje')
+        throw new Error(errorData.error || 'Error al enviar mensaje')
       }
     } catch (error) {
         toast({
@@ -168,16 +184,40 @@ export default function MuralPage() {
   }
 
   const deleteMessage = async (id: string) => {
+    if (!isRecaptchaLoaded) {
+      toast({
+        title: "Error",
+        description: "reCAPTCHA no está cargado. Por favor, recarga la página.",
+        variant: "destructive",
+      })
+      return
+    }
+    
     try {
+      // Obtener token de reCAPTCHA
+      const token = await execute('delete_message')
+      
       const response = await fetch(`/api/messages?id=${id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-Recaptcha-Token': token
+        }
       })
 
       if (response.ok) {
         // message deleted via realtime
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Error al eliminar mensaje')
       }
     } catch (error) {
       console.error('Error al eliminar mensaje:', error)
+      toast({
+        title: "Error al eliminar",
+        description: "Hubo un problema al eliminar el mensaje. Intenta de nuevo.",
+        variant: "destructive",
+      })
     }
   }
 

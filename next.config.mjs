@@ -29,12 +29,12 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value:
             "default-src 'self';" +
-            " script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://*.cloudflare.com;" +
-            " style-src 'self' 'unsafe-inline';" +
+            " script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://*.cloudflare.com https://www.google.com https://www.gstatic.com;" +
+            " style-src 'self' 'unsafe-inline' https://www.gstatic.com;" +
             " img-src 'self' data: https:;" +
-            " connect-src 'self' https://challenges.cloudflare.com https://*.cloudflare.com;" +
-            " frame-src 'self' https://challenges.cloudflare.com https://*.cloudflare.com;" +
-            " child-src 'self' https://challenges.cloudflare.com https://*.cloudflare.com;" +
+            " connect-src 'self' https://challenges.cloudflare.com https://*.cloudflare.com https://www.google.com;" +
+            " frame-src 'self' https://challenges.cloudflare.com https://*.cloudflare.com https://www.google.com;" +
+            " child-src 'self' https://challenges.cloudflare.com https://*.cloudflare.com https://www.google.com;" +
             " object-src 'none';" +
             " base-uri 'self';",
           },

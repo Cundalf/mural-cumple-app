@@ -2,6 +2,8 @@ import type { Metadata } from "next"
 import { GeistSans, GeistMono } from "geist/font"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
+import { RecaptchaProvider } from "@/components/recaptcha-provider"
+import { RecaptchaFallback } from "@/components/recaptcha-fallback"
 
 export const metadata: Metadata = {
   title: "Mural de Cumpleaños",
@@ -28,8 +30,12 @@ html {
         `}</style>
       </head>
       <body>
-        {children}
-        <Toaster />
+        <RecaptchaProvider>
+          <RecaptchaFallback>
+            {children}
+            <Toaster />
+          </RecaptchaFallback>
+        </RecaptchaProvider>
       </body>
     </html>
   )
