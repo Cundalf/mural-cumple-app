@@ -32,27 +32,37 @@ html {
             src="https://challenges.cloudflare.com/turnstile/v0/api.js" 
             async 
             defer
-            onLoad={() => {
-              if (typeof window !== 'undefined') {
+          />
+        )}
+        {/* Script para manejar la carga de Turnstile */}
+        <script dangerouslySetInnerHTML={{
+          __html: `
+            // Estado inicial de Turnstile
+            if (typeof window !== 'undefined') {
+              window.turnstileState = 'unloaded';
+              
+              // Función para manejar la carga exitosa
+              window.onTurnstileLoaded = function() {
                 window.turnstileState = 'loaded';
                 console.log('✅ Turnstile script cargado exitosamente');
                 window.dispatchEvent(new CustomEvent('turnstileLoaded'));
-              }
-            }}
-            onError={() => {
-              if (typeof window !== 'undefined') {
+              };
+              
+              // Función para manejar errores
+              window.onTurnstileError = function() {
                 window.turnstileState = 'error';
                 console.error('❌ Error cargando Turnstile script');
                 window.dispatchEvent(new CustomEvent('turnstileError'));
-              }
-            }}
-          />
-        )}
-        {/* Estado inicial de Turnstile */}
-        <script dangerouslySetInnerHTML={{
-          __html: `
-            if (typeof window !== 'undefined') {
-              window.turnstileState = 'unloaded';
+              };
+              
+              // Configurar callbacks cuando el DOM esté listo
+              document.addEventListener('DOMContentLoaded', function() {
+                const script = document.querySelector('script[src*="turnstile"]');
+                if (script) {
+                  script.onload = window.onTurnstileLoaded;
+                  script.onerror = window.onTurnstileError;
+                }
+              });
             }
           `
         }} />
