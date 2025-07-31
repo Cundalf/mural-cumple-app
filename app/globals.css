@@ -88,3 +88,38 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .message-text {
+    word-break: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    max-width: 100%;
+  }
+  
+  .message-card {
+    min-height: 200px;
+    max-width: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  
+  .message-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  
+  .message-text-container {
+    flex: 1;
+    min-height: 0;
+  }
+  
+  .message-footer {
+    margin-top: auto;
+    padding-top: 1rem;
+  }
+}

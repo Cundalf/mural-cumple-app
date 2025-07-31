@@ -243,15 +243,15 @@ export default function MuralPage() {
               box-sizing: border-box;
             }
             
-            body {
-              font-family: 'Arial', sans-serif;
-              background: linear-gradient(135deg, #fefce8 0%, #fdf2f8 50%, #eff6ff 100%) !important;
-              padding: 40px 20px;
-              min-height: 100vh;
-              -webkit-print-color-adjust: exact !important;
-              color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
+                         body {
+               font-family: 'Arial', sans-serif;
+               background: linear-gradient(135deg, #fefce8 0%, #fdf2f8 50%, #eff6ff 100%) !important;
+               padding: 60px 40px;
+               min-height: 100vh;
+               -webkit-print-color-adjust: exact !important;
+               color-adjust: exact !important;
+               print-color-adjust: exact !important;
+             }
             
             .header {
               text-align: center;
@@ -270,32 +270,73 @@ export default function MuralPage() {
               color: #6b7280 !important;
             }
             
-            .messages-grid {
-              display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-              gap: 24px;
-              max-width: 1200px;
-              margin: 0 auto;
-            }
+                                                   .messages-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 24px;
+                max-width: 1200px;
+                margin: 0 auto;
+                align-items: stretch;
+                padding: 20px 0;
+              }
             
-            .message-card {
-              border-radius: 12px;
-              padding: 24px;
-              border: 2px solid;
-              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-              break-inside: avoid;
-              page-break-inside: avoid;
-              -webkit-print-color-adjust: exact !important;
-              color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            
-            .message-text {
-              font-size: 18px;
-              line-height: 1.6;
-              margin-bottom: 16px;
-              font-weight: 500;
-            }
+                                                                                                       .message-card {
+                 border-radius: 12px;
+                 padding: 24px;
+                 border: 2px solid;
+                 box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                 break-inside: avoid;
+                 page-break-inside: avoid;
+                 -webkit-print-color-adjust: exact !important;
+                 color-adjust: exact !important;
+                 print-color-adjust: exact !important;
+                 display: flex;
+                 flex-direction: column;
+                 height: 100%;
+                 overflow: hidden;
+                 min-width: 0;
+                 margin: 8px;
+               }
+             
+                           .message-content {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                overflow: hidden;
+                min-width: 0;
+                padding-right: 8px;
+              }
+             
+                           .message-text {
+                font-size: 18px;
+                line-height: 1.6;
+                margin-bottom: 16px;
+                font-weight: 500;
+                word-break: break-all;
+                overflow-wrap: break-word;
+                hyphens: auto;
+                max-width: 100%;
+                flex: 1;
+                white-space: normal;
+                overflow: hidden;
+                padding-right: 40px;
+              }
+              
+              .message-author {
+                font-size: 16px;
+                font-weight: 600;
+                margin-bottom: 8px;
+                word-break: break-all;
+                overflow-wrap: break-word;
+                white-space: normal;
+                overflow: hidden;
+              }
+             
+             .message-footer {
+               margin-top: auto;
+               padding-top: 1rem;
+             }
             
             .message-author {
               font-size: 16px;
@@ -308,14 +349,16 @@ export default function MuralPage() {
               opacity: 0.75;
             }
             
-            .heart {
-              position: absolute;
-              top: 16px;
-              right: 16px;
-              width: 20px;
-              height: 20px;
-              opacity: 0.6;
-            }
+                         .heart {
+               position: absolute;
+               top: 16px;
+               right: 16px;
+               width: 20px;
+               height: 20px;
+               opacity: 0.6;
+               z-index: 10;
+               pointer-events: none;
+             }
             
             /* Colores para las tarjetas */
             .bg-pink-100 { 
@@ -427,16 +470,18 @@ export default function MuralPage() {
             ${messages
               .map((message) => {
                 const colorClass = message.color.split(" ")[0]
-                return `
-                  <div class="message-card ${colorClass}" style="position: relative;">
-                    <div style="position: relative;">
-                      <p class="message-text">"${message.text}"</p>
-                      <p class="message-author">- ${message.author}</p>
-                      <p class="message-date">${new Date(message.timestamp).toLocaleString()}</p>
-                    </div>
-                    <div class="heart">💕</div>
-                  </div>
-                `
+                                 return `
+                   <div class="message-card ${colorClass}" style="position: relative;">
+                     <div class="message-content" style="position: relative;">
+                       <p class="message-text">"${message.text}"</p>
+                       <div class="message-footer">
+                         <p class="message-author">- ${message.author}</p>
+                         <p class="message-date">${new Date(message.timestamp).toLocaleString()}</p>
+                       </div>
+                     </div>
+                     <div class="heart">💕</div>
+                   </div>
+                 `
               })
               .join("")}
           </div>
@@ -593,9 +638,9 @@ export default function MuralPage() {
               {cleanMessages.map((message) => (
                 <Card
                   key={message.id}
-                  className={`${message.color} border-2 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 relative`}
+                  className={`${message.color} border-2 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 relative message-card`}
                 >
-                  <CardContent className="p-6 relative">
+                  <CardContent className="p-6 relative h-full message-content">
                     <Heart className="absolute top-4 right-4 w-5 h-5 text-current opacity-60" />
                     {isAdmin && (
                       <Button
@@ -608,13 +653,14 @@ export default function MuralPage() {
                       </Button>
                     )}
 
-                    <div className="pr-8">
-                      <p className="text-lg leading-relaxed mb-4 font-medium">"{message.text}"</p>
+                    <div className="pr-8 message-text-container">
+                      <p className="text-lg leading-relaxed mb-4 font-medium message-text">"{message.text}"</p>
+                    </div>
 
+                    <div className="message-footer">
                       <div className="flex items-center justify-between">
                         <p className="font-semibold text-base">- {message.author}</p>
                       </div>
-
                       <p className="text-sm opacity-75 mt-2">{new Date(message.timestamp).toLocaleString()}</p>
                     </div>
                   </CardContent>
